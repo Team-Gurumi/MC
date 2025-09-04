@@ -1,0 +1,11 @@
+# Go
+bin/
+*.exe
+*.out
+*.test
+
+# Modules
+go.sum
+
+# OS
+.DS_Store
