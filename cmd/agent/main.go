@@ -74,13 +74,14 @@ func main() {
 
 			// 2) 실행
 			runCtx := ctx
+			var cancelRun context.CancelFunc
 			if task.TimeoutSec > 0 {
-				var cancelRun context.CancelFunc
 				runCtx, cancelRun = context.WithTimeout(ctx, time.Duration(task.TimeoutSec)*time.Second)
-				defer cancelRun()
 			}
-
 			err := runTaskWithDocker(runCtx, cli, task)
+			if cancelRun != nil {
+				cancelRun()
+			}
 
 			// 3) finish 보고 (컨트롤 서버가 있을 때만)
 			if controlURL != "" {
@@ -219,17 +220,26 @@ func runTaskWithDocker(ctx context.Context, cli *client.Client, task Task) error
 	}
 
 	// 종료 대기
-	statusCh, errCh := cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return fmt.Errorf("wait err: %w", err)
-		}
-	case st := <-statusCh:
-		b, _ := json.Marshal(st)
-		log.Printf("[task:%s] exited: %s", task.ID, string(b))
-	}
-	return nil
+    statusCh, errCh := cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+    var exitCode int64 = -1
+
+    select {
+    case err := <-errCh:
+        if err != nil {
+            return fmt.Errorf("wait err: %w", err)
+        }
+    case st := <-statusCh:
+        exitCode = st.StatusCode
+        b, _ := json.Marshal(st)
+        log.Printf("[task:%s] exited: %s", task.ID, string(b))
+    }
+
+    // 종료코드를 notes로만 남기지 말고 상위에서 리포팅에 쓰도록 반환값에 포함하거나
+    // 여기서 직접 보고해도 됨. (아래 C 패치 참고)
+    if exitCode != 0 {
+        return fmt.Errorf("non-zero exit code: %d", exitCode)
+    }
+    return nil
 }
 
 // finish 호출 함수
