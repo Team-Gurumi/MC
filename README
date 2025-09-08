@@ -9,3 +9,32 @@ make install-agent  HOST=ubuntu@node-1 CONTROL_URL=http://100.70.1.2:8080
 # 이후 재시작/로그
 make agent-restart  HOST=ubuntu@node-1
 make logs-agent     HOST=ubuntu@node-1
+
+# 작업 처리할 agent의 NODE_ID 확인
+ssh ubuntu@B 'hostname'      # 예: "node-b"
+# 또는
+ssh ubuntu@B 'systemctl show -p Environment mc-agent'
+
+# 사용자가 작업 push (target_node 지정)
+curl -X POST http://<control-host>:8080/api/tasks/push \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "image": "alpine:3.20",
+    "cmd": ["sh","-c","echo hi-from-A && sleep 2 && uname -a"],
+    "timeout_sec": 60,
+    "labels": {
+      "job": "demo",
+      "target_node": "node-b"   // ← B의 NODE_ID(=hostname)
+    },
+    "resources": {
+      "nano_cpus": 500000000,
+      "memory_bytes": 268435456
+    }
+  }'
+
+# agent는 사용자와 같은 Control에 붙어 있음
+make install-agent HOST=ubuntu@B CONTROL_URL=http://<control-host>:8080 DOCKER_RUNTIME=kata-runtime
+
+# 결과 확인
+curl http://<control-host>:8080/api/tasks
+curl http://<control-host>:8080/api/tasks/<taskId>

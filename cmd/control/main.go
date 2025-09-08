@@ -144,6 +144,16 @@ func (s *store) claim(node string) (*Task, bool) {
 		if task == nil || task.Status != "queued" {
 			continue
 		}
+
+		// target_node 라벨이 존재할 시 해당 노드만 claim 가능
+		if task.Labels != nil {
+            if tgt, ok := task.Labels["target_node"]; ok && tgt != "" && tgt != node {
+                // 이 작업은 다른 노드를 타깃으로 함 → 큐의 뒤로 보내 재시도
+                s.queue = append(s.queue, id)
+                continue
+            }
+        }
+
 		task.Status = "assigned"
 		task.AssignedTo = node
 		task.AssignedAt = time.Now()
