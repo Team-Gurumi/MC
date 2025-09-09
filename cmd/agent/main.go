@@ -16,10 +16,9 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
-	// 🔧 BEFORE: "github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy" // 🔧 추가: stdout/stderr 프레임 분리
+	"github.com/docker/docker/pkg/stdcopy" // stdout/stderr 프레임 분리
 
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/mem"
@@ -195,7 +194,7 @@ func pollAndClaim(controlURL, nodeID string) (Task, bool) {
 		return Task{}, false
 	}
 	if t.Runtime == "" {
-		t.Runtime = getenv("DOCKER_RUNTIME", "kata-runtime") // ★★ 기본 kata
+		t.Runtime = getenv("DOCKER_RUNTIME", "kata-runtime") 
 	}
 	return t, true
 }
@@ -205,7 +204,7 @@ func runTaskWithDocker(ctx context.Context, cli *client.Client, task Task) (Metr
 	var result Result
 	exitCode := -1
 
-	// 🔧 이미지 풀: types.ImagePullOptions 사용
+	// 이미지 풀: types.ImagePullOptions
 	rc, err := cli.ImagePull(ctx, task.Image, types.ImagePullOptions{})
 	if err != nil {
 		return metrics, result, exitCode, fmt.Errorf("image pull: %w", err)
@@ -239,7 +238,7 @@ func runTaskWithDocker(ctx context.Context, cli *client.Client, task Task) (Metr
 	stdoutBuf := new(bytes.Buffer)
 	stderrBuf := new(bytes.Buffer)
 
-	// 🔧 로그 팔로우: stdcopy로 stdout/stderr 분리 복사
+	// 로그 팔로우: stdcopy로 stdout/stderr 분리 복사
 	logs, err := cli.ContainerLogs(ctx, resp.ID, container.LogsOptions{
 		ShowStdout: true, ShowStderr: true, Follow: true, Tail: "200",
 	})
@@ -287,7 +286,7 @@ func runTaskWithDocker(ctx context.Context, cli *client.Client, task Task) (Metr
 			}
 			samples++
 
-			// CPU 퍼센트 계산(간단 계산식)
+			// CPU 퍼센트 계산
 			cpuDelta := float64(v.CPUStats.CPUUsage.TotalUsage - v.PreCPUStats.CPUUsage.TotalUsage)
 			sysDelta := float64(v.CPUStats.SystemUsage - v.PreCPUStats.SystemUsage)
 			var cpuPercent float64
