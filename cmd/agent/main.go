@@ -22,6 +22,9 @@ import (
 
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/mem"
+
+	// ★ DHT 사이드채널용
+	"example.com/mc-agent/internal/dht"
 )
 
 type Task struct {
@@ -72,25 +75,57 @@ func main() {
 			}
 			log.Printf("[agent] claimed task id=%s image=%s", task.ID, task.Image)
 
+			// ★ DHT: Claim 직후 상태 반영 (assigned)
+			{
+				cliDHT := dht.NewFromEnv()
+				now := time.Now().UTC().Format(time.RFC3339)
+				ctx2, cancel2 := context.WithTimeout(context.Background(), cliDHT.Timeout)
+				_ = cliDHT.SetJSON(ctx2, "task:"+task.ID+":state", map[string]any{
+					"status":     "assigned",
+					"assignedTo": nodeID,
+					"updatedAt":  now,
+					"lastSeenAt": now,
+				})
+				cancel2()
+			}
+
 			// 2) 실행
 			runCtx := ctx
 			var cancelRun context.CancelFunc
 			if task.TimeoutSec > 0 {
 				runCtx, cancelRun = context.WithTimeout(ctx, time.Duration(task.TimeoutSec)*time.Second)
 			}
-			err := runTaskWithDocker(runCtx, cli, task)
+			err := runTaskWithDocker(runCtx, cli, task, nodeID) // ★ nodeID 전달
 			if cancelRun != nil {
 				cancelRun()
 			}
 
 			// 3) finish 보고 (컨트롤 서버가 있을 때만)
+			status := "finished"
+			notes := "ok"
+			if err != nil {
+				status = "failed"
+				notes = err.Error()
+			}
+
+			// ★ DHT: 종료 상태 반영 (finished/failed)
+			{
+				cliDHT := dht.NewFromEnv()
+				now := time.Now().UTC().Format(time.RFC3339)
+				ctx2, cancel2 := context.WithTimeout(context.Background(), cliDHT.Timeout)
+				// exitCode는 여기선 알 수 없으니 nil로 둡니다(필요시 run 함수 반환값 확장)
+				_ = cliDHT.SetJSON(ctx2, "task:"+task.ID+":state", map[string]any{
+					"status":     status,
+					"assignedTo": nodeID,
+					"exitCode":   nil,
+					"notes":      notes,
+					"updatedAt":  now,
+					"lastSeenAt": now,
+				})
+				cancel2()
+			}
+
 			if controlURL != "" {
-				status := "finished"
-				notes := "ok"
-				if err != nil {
-					status = "failed"
-					notes = err.Error()
-				}
 				reportFinish(controlURL, task.ID, status, nil, notes)
 			}
 
@@ -178,7 +213,7 @@ func pollAndClaim(controlURL, nodeID string, demoDone *bool) (Task, bool) {
 	return t, true
 }
 
-func runTaskWithDocker(ctx context.Context, cli *client.Client, task Task) error {
+func runTaskWithDocker(ctx context.Context, cli *client.Client, task Task, nodeID string) error {
 	// 이미지 풀
 	rc, err := cli.ImagePull(ctx, task.Image, image.PullOptions{})
 	if err != nil {
@@ -208,6 +243,20 @@ func runTaskWithDocker(ctx context.Context, cli *client.Client, task Task) error
 	}
 	log.Printf("[task:%s] container started id=%s", task.ID, resp.ID[:12])
 
+	// ★ DHT: 컨테이너 시작 직후 상태 반영 (running)
+	{
+		cliDHT := dht.NewFromEnv()
+		now := time.Now().UTC().Format(time.RFC3339)
+		ctx2, cancel2 := context.WithTimeout(context.Background(), cliDHT.Timeout)
+		_ = cliDHT.SetJSON(ctx2, "task:"+task.ID+":state", map[string]any{
+			"status":     "running",
+			"assignedTo": nodeID,
+			"updatedAt":  now,
+			"lastSeenAt": now,
+		})
+		cancel2()
+	}
+
 	// 로그 팔로우 (선택)
 	logs, err := cli.ContainerLogs(ctx, resp.ID, container.LogsOptions{
 		ShowStdout: true, ShowStderr: true, Follow: true, Tail: "50",
@@ -220,26 +269,25 @@ func runTaskWithDocker(ctx context.Context, cli *client.Client, task Task) error
 	}
 
 	// 종료 대기
-    statusCh, errCh := cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
-    var exitCode int64 = -1
+	statusCh, errCh := cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	var exitCode int64 = -1
 
-    select {
-    case err := <-errCh:
-        if err != nil {
-            return fmt.Errorf("wait err: %w", err)
-        }
-    case st := <-statusCh:
-        exitCode = st.StatusCode
-        b, _ := json.Marshal(st)
-        log.Printf("[task:%s] exited: %s", task.ID, string(b))
-    }
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return fmt.Errorf("wait err: %w", err)
+		}
+	case st := <-statusCh:
+		exitCode = st.StatusCode
+		b, _ := json.Marshal(st)
+		log.Printf("[task:%s] exited: %s", task.ID, string(b))
+	}
 
-    // 종료코드를 notes로만 남기지 말고 상위에서 리포팅에 쓰도록 반환값에 포함하거나
-    // 여기서 직접 보고해도 됨. (아래 C 패치 참고)
-    if exitCode != 0 {
-        return fmt.Errorf("non-zero exit code: %d", exitCode)
-    }
-    return nil
+	// 종료코드는 현재 반환값에 포함하지 않고, 0이 아니면 에러 반환
+	if exitCode != 0 {
+		return fmt.Errorf("non-zero exit code: %d", exitCode)
+	}
+	return nil
 }
 
 // finish 호출 함수

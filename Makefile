@@ -4,9 +4,9 @@ BIN_CTRL  := mc-control
 
 # 빌드
 build-agent:
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o $(BIN_AGENT) ./cmd/agent
+	go build -o $(BIN_AGENT) ./cmd/agent
 build-control:
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o $(BIN_CTRL) ./cmd/control
+	go build -o $(BIN_CTRL) ./cmd/control
 build: build-agent build-control
 
 # 원격 설치 (에이전트)
@@ -68,3 +68,35 @@ logs-agent:
 	ssh $(HOST) 'journalctl -u mc-agent -f -n 100'
 logs-control:
 	ssh $(HOST) 'journalctl -u mc-control -f -n 100'
+
+# ===== DHT / Python 사이드채널 개발용 타깃 =====
+PYVENV := .venv
+PYBIN  := $(PYVENV)/bin
+SCRIPTS := $(CURDIR)/scripts/dht
+
+.PHONY: venv dht-bootstrap observe run-control run-agent
+
+venv:
+	python3 -m venv $(PYVENV)
+	$(PYBIN)/pip install -U pip
+	$(PYBIN)/pip install -r requirements-dht.txt
+
+dht-bootstrap:
+	@echo "Bootstrap on port $$DHT_BOOTSTRAP_PORT (default 8468)"
+	@PYTHONPATH=$(SCRIPTS) $(PYBIN)/python $(SCRIPTS)/dht_bootstrap.py
+
+observe:
+	@PYTHONPATH=$(SCRIPTS) DHT_CLIENT_PORT=$${DHT_CLIENT_PORT:-8473} \
+	$(PYBIN)/uvicorn control_observe:app --host 0.0.0.0 --port $${PORT:-8000} --reload --app-dir $(SCRIPTS)
+
+run-control:
+	@PATH="$(PYBIN):$$PATH" DHT_PY_PATH="$(SCRIPTS)" \
+	DHT_BOOTSTRAP=$${DHT_BOOTSTRAP:?set DHT_BOOTSTRAP} \
+	DHT_CLIENT_PORT=$${DHT_CLIENT_PORT:-8470} \
+	go run ./cmd/control
+
+run-agent:
+	@PATH="$(PYBIN):$$PATH" DHT_PY_PATH="$(SCRIPTS)" \
+	DHT_BOOTSTRAP=$${DHT_BOOTSTRAP:?set DHT_BOOTSTRAP} \
+	DHT_CLIENT_PORT=$${DHT_CLIENT_PORT:-8471} \
+	go run ./cmd/agent

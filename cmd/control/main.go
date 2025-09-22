@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"math/rand"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"example.com/mc-agent/internal/dht"
 )
 
 type Task struct {
@@ -147,35 +150,61 @@ func withJSON(next http.Handler) http.Handler {
 
 func (sv *server) push(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		httpErr(w, 405, "method not allowed"); return
+		httpErr(w, 405, "method not allowed")
+		return
 	}
 	var t Task
 	if err := json.NewDecoder(r.Body).Decode(&t); err != nil || t.Image == "" {
-		httpErr(w, 400, "invalid payload"); return
+		httpErr(w, 400, "invalid payload")
+		return
 	}
 	sv.s.push(&t)
+
+	// === DHT: publish task meta (best-effort) ===
+	go func(t Task) {
+		cli := dht.NewFromEnv()
+		meta := map[string]any{
+			"version":   1,
+			"image":     t.Image,
+			"cmd":       t.Cmd,
+			"env":       t.Env,
+			"labels":    t.Labels,
+			"createdAt": time.Now().UTC().Format(time.RFC3339),
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+		defer cancel()
+		if err := cli.SetJSON(ctx, "task:"+t.ID+":meta", meta); err != nil {
+			log.Printf("[dht] set meta failed: %v", err)
+		}
+	}(t)
+	// ===========================================
+
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(t)
 }
 
 func (sv *server) claim(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		httpErr(w, 405, "method not allowed"); return
+		httpErr(w, 405, "method not allowed")
+		return
 	}
 	var req claimReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.NodeID == "" {
-		httpErr(w, 400, "node_id required"); return
+		httpErr(w, 400, "node_id required")
+		return
 	}
 	t, ok := sv.s.claim(req.NodeID)
 	if !ok {
-		w.WriteHeader(http.StatusNoContent); return
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
 	_ = json.NewEncoder(w).Encode(t)
 }
 
 func (sv *server) list(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		httpErr(w, 405, "method not allowed"); return
+		httpErr(w, 405, "method not allowed")
+		return
 	}
 	sv.s.mu.Lock()
 	defer sv.s.mu.Unlock()
@@ -195,9 +224,11 @@ func (sv *server) getOrFinish(w http.ResponseWriter, r *http.Request) {
 		t, ok := sv.s.tasks[id]
 		sv.s.mu.Unlock()
 		if !ok {
-			httpErr(w, 404, "not found"); return
+			httpErr(w, 404, "not found")
+			return
 		}
-		_ = json.NewEncoder(w).Encode(t); return
+		_ = json.NewEncoder(w).Encode(t)
+		return
 	}
 	if len(parts) == 2 && parts[1] == "finish" && r.Method == http.MethodPost {
 		id := parts[0]
@@ -207,13 +238,16 @@ func (sv *server) getOrFinish(w http.ResponseWriter, r *http.Request) {
 			Notes    string `json:"notes,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Status == "" {
-			httpErr(w, 400, "status required"); return
+			httpErr(w, 400, "status required")
+			return
 		}
 		t, ok := sv.s.finish(id, body.Status, body.ExitCode, body.Notes)
 		if !ok {
-			httpErr(w, 404, "not found"); return
+			httpErr(w, 404, "not found")
+			return
 		}
-		_ = json.NewEncoder(w).Encode(t); return
+		_ = json.NewEncoder(w).Encode(t)
+		return
 	}
 	http.NotFound(w, r)
 }
@@ -235,4 +269,9 @@ func main() {
 	}
 }
 
-func getenv(k, d string) string { if v := os.Getenv(k); v != "" { return v }; return d }
+func getenv(k, d string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return d
+}
