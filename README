@@ -1,11 +1,40 @@
 #서버에 Go, Docker, systemd 는 이미 설치되어 있어야 함
 
+#설치
 # 컨트롤 서버 설치(원격)
 make install-control HOST=ubuntu@control-box PORT=8080 TIMEOUT=180
 
 # 에이전트 설치(원격) - 컨트롤 서버 주소 넘김(로컬/테일스케일 IP)
 make install-agent  HOST=ubuntu@node-1 CONTROL_URL=http://100.70.1.2:8080
+# 작업 지정할 노드 (에이전트) - 같은 컨트롤에 붙이고 kata 사용
+make install-agent  HOST=ubuntu@B CONTROL_URL=http://100.70.1.2:8080 DOCKER_RUNTIME=kata-runtime
 
 # 이후 재시작/로그
 make agent-restart  HOST=ubuntu@node-1
 make logs-agent     HOST=ubuntu@node-1
+
+# 작업 처리할 agent의 NODE_ID 확인
+ssh ubuntu@B 'hostname'      # 예: "node-b"
+# 또는
+ssh ubuntu@B 'systemctl show -p Environment mc-agent'
+
+# 사용자가 작업 push (target_node 지정)
+curl -X POST http://100.70.1.2:8080/api/tasks/push \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "image": "alpine:3.20",
+    "cmd": ["sh","-c","echo hi-from-A && sleep 2 && uname -a"],
+    "timeout_sec": 60,
+    "labels": {
+      "job": "demo",
+      "target_node": "node-b"
+    },
+    "resources": {
+      "nano_cpus": 500000000,
+      "memory_bytes": 268435456
+    }
+  }'
+
+# 결과 확인
+curl http://<control-host>:8080/api/tasks
+curl http://<control-host>:8080/api/tasks/<taskId>
