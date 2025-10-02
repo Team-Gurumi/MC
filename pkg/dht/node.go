@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
-	"time"
-
 	"github.com/libp2p/go-libp2p"
-        dht "github.com/libp2p/go-libp2p-kad-dht"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
+	record "github.com/libp2p/go-libp2p-record"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	protocol "github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/multiformats/go-multiaddr"
+	"math/rand"
+	"time"
 )
 
 type Node struct {
@@ -22,29 +23,42 @@ type Node struct {
 	namespace string
 }
 
+type noopValidator struct{}
+
+func (noopValidator) Validate(string, []byte) error        { return nil }
+func (noopValidator) Select(string, [][]byte) (int, error) { return 0, nil }
+
 // NewNode: 부트스트랩 멀티addr 목록을 받아 DHT 노드 생성/부트스트랩
 func NewNode(parent context.Context, namespace string, bootstrapAddrs []string) (*Node, error) {
 	ctx, cancel := context.WithCancel(parent)
 
 	var (
-		h   host.Host
+		h      host.Host
 		dhtVal *dht.IpfsDHT // 변수 이름을 dht에서 dhtVal로 변경하여 import 이름과 충돌 방지
 		err    error
 	)
 
-
 	// libp2p.Routing에 함수를 직접 전달합니다. 타입 캐스팅이 필요 없습니다.
 	h, err = libp2p.New()
-if err != nil {
-    cancel()
-    return nil, fmt.Errorf("libp2p new: %w", err)
-}
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("libp2p new: %w", err)
+	}
 
-dhtVal, err = dht.New(ctx, h, dht.Mode(dht.ModeAuto))
-if err != nil {
-    cancel()
-    return nil, fmt.Errorf("dht new: %w", err)
-}
+	dhtVal, err = dht.New(
+		ctx,
+		h,
+		dht.Mode(dht.ModeAuto),
+		dht.ProtocolPrefix(protocol.ID("/"+namespace)),
+		dht.Validator(record.NamespacedValidator{
+			namespace: noopValidator{},
+		}),
+	)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("dht new: %w", err)
+
+	}
 	if dhtVal == nil {
 		cancel()
 		return nil, errors.New("dht not initialized")
@@ -89,9 +103,9 @@ func (n *Node) Close()                   { n.cancel(); _ = n.Host.Close() }
 
 func (n *Node) nsKey(key string) string {
 	if n.namespace == "" {
-		return key
+		return "/" + key
 	}
-	return n.namespace + "/" + key
+	return "/" + n.namespace + "/" + key
 }
 
 func (n *Node) withTimeout(d time.Duration) (context.Context, context.CancelFunc) {
