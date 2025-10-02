@@ -7,12 +7,10 @@ import (
 	"math/rand"
 	"time"
 
-	libp2p "github.com/libp2p/go-libp2p"
-	kaddht "github.com/libp2p/go-libp2p-kad-dht"
-	lp2pconfig "github.com/libp2p/go-libp2p/config"
+	"github.com/libp2p/go-libp2p"
+        dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/routing"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -20,7 +18,7 @@ type Node struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	Host      host.Host
-	DHT       *kaddht.IpfsDHT
+	DHT       *dht.IpfsDHT
 	namespace string
 }
 
@@ -30,26 +28,24 @@ func NewNode(parent context.Context, namespace string, bootstrapAddrs []string) 
 
 	var (
 		h   host.Host
-		dht *kaddht.IpfsDHT
+		dhtVal *dht.IpfsDHT // 변수 이름을 dht에서 dhtVal로 변경하여 import 이름과 충돌 방지
+		err    error
 	)
 
-	// libp2p.Routing은 lp2pconfig.RoutingC 타입을 요구하므로 캐스팅 필수
-	h, err := libp2p.New(
-		libp2p.Routing(lp2pconfig.RoutingC(
-			func(c context.Context, hh host.Host) (routing.Routing, error) {
-				dd, err := kaddht.New(c, hh, kaddht.Mode(kaddht.ModeAuto))
-				if err == nil {
-					dht = dd // 바깥에서 참조
-				}
-				return dd, err
-			},
-		)),
-	)
-	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("libp2p new: %w", err)
-	}
-	if dht == nil {
+
+	// libp2p.Routing에 함수를 직접 전달합니다. 타입 캐스팅이 필요 없습니다.
+	h, err = libp2p.New()
+if err != nil {
+    cancel()
+    return nil, fmt.Errorf("libp2p new: %w", err)
+}
+
+dhtVal, err = dht.New(ctx, h, dht.Mode(dht.ModeAuto))
+if err != nil {
+    cancel()
+    return nil, fmt.Errorf("dht new: %w", err)
+}
+	if dhtVal == nil {
 		cancel()
 		return nil, errors.New("dht not initialized")
 	}
@@ -74,7 +70,7 @@ func NewNode(parent context.Context, namespace string, bootstrapAddrs []string) 
 	}
 
 	// DHT 부트스트랩
-	if err := dht.Bootstrap(ctx); err != nil {
+	if err := dhtVal.Bootstrap(ctx); err != nil {
 		cancel()
 		return nil, fmt.Errorf("dht bootstrap: %w", err)
 	}
@@ -83,12 +79,11 @@ func NewNode(parent context.Context, namespace string, bootstrapAddrs []string) 
 		ctx:       ctx,
 		cancel:    cancel,
 		Host:      h,
-		DHT:       dht,
+		DHT:       dhtVal,
 		namespace: namespace,
 	}
 	return n, nil
 }
-
 func (n *Node) Context() context.Context { return n.ctx }
 func (n *Node) Close()                   { n.cancel(); _ = n.Host.Close() }
 
