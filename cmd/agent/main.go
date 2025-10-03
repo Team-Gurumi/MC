@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -70,6 +71,18 @@ func runAgent(d *dhtnode.Node, myPeerID string) error {
 
 				// 실제 실행 고루틴
 				go func(taskID, nonce string) {
+  // === [추가] 매니페스트 읽기 (DHT: p2p/<id>/manifest) ===
+    var manifest struct {
+        CID     string   `json:"cid"`
+        Seeders []string `json:"seeders"`
+        EncMeta string   `json:"enc_meta"`
+    }
+    if err := d.GetJSON("p2p/"+taskID+"/manifest", &manifest, 2*time.Second); err == nil {
+        log.Printf("[agent] manifest: cid=%s seeders=%v", manifest.CID, manifest.Seeders)
+    } else {
+        log.Printf("[agent] no manifest for %s (ok in demo)", taskID)
+    }
+
 					// 엔드포인트 게시 (예: 로컬 WS 에코 서버가 8080에 떠있다고 가정)
 					endp := task.TaskEndpoint{
 						TaskID:   taskID,
@@ -104,6 +117,17 @@ func runAgent(d *dhtnode.Node, myPeerID string) error {
 					execDone := time.After(5 * time.Second) // 데모: 5초 뒤 완료
 					exitCode := 0
 					execErr := ""
+
+  // === [추가] 데모용 '가져온 척' ===
+    if manifest.CID != "" {
+        path := "./data/" + manifest.CID
+        if _, err := os.Stat(path); err == nil {
+            log.Printf("[agent] demo fetched & 'decrypted' payload at %s", path)
+        } else {
+            log.Printf("[agent] demo: no local payload for CID, skipping fetch")
+        }
+    }
+
 
 				runLoop:
 					for {
@@ -158,11 +182,13 @@ func runAgent(d *dhtnode.Node, myPeerID string) error {
 }
 
 func main() {
-	var (
-		ns        = flag.String("ns", "mc", "DHT namespace prefix")
-		bootstrap = flag.String("bootstrap", "", "comma-separated bootstrap multiaddrs")
-	)
+	 var (
+        ns          = flag.String("ns", "mc", "DHT namespace prefix")
+        bootstrap   = flag.String("bootstrap", "", "comma-separated bootstrap multiaddrs")
+        controlAddr = flag.String("control", "127.0.0.1:8080", "Control base address (host:port)")
+    )
 	flag.Parse()
+	_ = *controlAddr   //  todo: 추후 finish 보고할 때 실제 사용
 
 	var boots []string
 	if *bootstrap != "" {

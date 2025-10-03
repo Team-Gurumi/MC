@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
 	"log"
 	"strings"
 	"time"
@@ -101,6 +102,14 @@ func main() {
 	for _, a := range node.Multiaddrs() {
 		fmt.Println("[control] addr:", a)
 	}
+    // HTTP 서버 기동
+    mux := mountHTTP(node)
+    go func() {
+        fmt.Println("[control] http listening :8080")
+        if err := http.ListenAndServe(":8080", mux); err != nil {
+            log.Fatal(err)
+        }
+    }()
 
 	// 작업 생성
 	if *createStr != "" {
