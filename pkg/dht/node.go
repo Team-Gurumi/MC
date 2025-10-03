@@ -44,11 +44,15 @@ func NewNode(parent context.Context, namespace string, bootstrapAddrs []string) 
 		cancel()
 		return nil, fmt.Errorf("libp2p new: %w", err)
 	}
+mode := dht.Mode(dht.ModeAuto)
+if len(bootstrapAddrs) == 0 {
+    mode = dht.Mode(dht.ModeServer)
+}
 
 	dhtVal, err = dht.New(
 		ctx,
 		h,
-		dht.Mode(dht.ModeAuto),
+		mode,
 		dht.ProtocolPrefix(protocol.ID("/"+namespace)),
 		dht.Validator(record.NamespacedValidator{
 			namespace: noopValidator{},
@@ -65,28 +69,42 @@ func NewNode(parent context.Context, namespace string, bootstrapAddrs []string) 
 	}
 
 	// 부트스트랩 피어 연결
+
 	if len(bootstrapAddrs) > 0 {
-		var peers []peer.AddrInfo
 		for _, s := range bootstrapAddrs {
 			m, err := multiaddr.NewMultiaddr(s)
 			if err != nil {
+				fmt.Printf("[bootstrap] bad multiaddr: %q: %v\n", s, err)
 				continue
 			}
 			info, err := peer.AddrInfoFromP2pAddr(m)
 			if err != nil {
+				fmt.Printf("[bootstrap] bad p2p addr: %q: %v\n", s, err)
 				continue
 			}
-			peers = append(peers, *info)
-		}
-		for _, p := range peers {
-			_ = h.Connect(ctx, p)
+			if err := h.Connect(ctx, *info); err != nil {
+				fmt.Printf("[bootstrap] connect %s: %v\n", info.ID, err)
+			}
 		}
 	}
 
-	// DHT 부트스트랩
 	if err := dhtVal.Bootstrap(ctx); err != nil {
 		cancel()
 		return nil, fmt.Errorf("dht bootstrap: %w", err)
+	}
+
+	if len(bootstrapAddrs) > 0 { // ← 부트스트랩 주소가 있을 때만 대기
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			if dhtVal.RoutingTable() != nil && dhtVal.RoutingTable().Size() > 0 {
+				break
+			}
+			if time.Now().After(deadline) {
+				cancel()
+				return nil, fmt.Errorf("no peers in routing table after bootstrap")
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
 	}
 
 	n := &Node{
