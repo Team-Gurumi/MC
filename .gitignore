@@ -9,3 +9,4 @@ go.sum
 
 # OS
 .DS_Store
+*.deb
