@@ -5,16 +5,91 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"net/http"
 	"log"
+	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	dhtnode "github.com/Team-Gurumi/MC/pkg/dht"
 	"github.com/Team-Gurumi/MC/pkg/task"
 )
 
-func createTask(d *dhtnode.Node, id string, image string, cmd []string) error {
+// --- 광고 재게시 매니저 ---
+type AnnounceManager struct {
+	d        *dhtnode.Node
+	ns       string               // 
+	ttl      time.Duration        // 광고 TTL (예: 30s)
+	interval time.Duration        // 재게시 주기 (보통 ttl/2)
+	mu       sync.Mutex
+	dirty    map[string]struct{}  // 재게시가 필요한 job ID 집합
+	last     map[string]time.Time // 마지막 게시 시각
+}
+
+func NewAnnounceManager(d *dhtnode.Node, ns string, ttl, interval time.Duration) *AnnounceManager {
+	return &AnnounceManager{
+		d:        d,
+		ns:       ns, // 
+		ttl:      ttl,
+		interval: interval,
+		dirty:    make(map[string]struct{}),
+		last:     make(map[string]time.Time),
+	}
+}
+
+// 외부에서 호출: 큐에 넣기
+func (m *AnnounceManager) Enqueue(id string) {
+	m.mu.Lock()
+	m.dirty[id] = struct{}{}
+	m.mu.Unlock()
+}
+
+// 내부: 한 건 게시(이미 control_http.go에 만든 announceAds를 그대로 재사용)
+func (m *AnnounceManager) announceOnce(ctx context.Context, id string) {
+	// manifest를 읽어서 없으면 스킵 (광고는 베스트에포트)
+	var man task.Manifest
+	if err := m.d.GetJSON(task.KeyManifest(id), &man, 2*time.Second); err != nil || man.RootCID == "" {
+		return
+	}
+	announceAds(ctx, m.d, m.ns, id, &man, m.ttl) // 
+
+	m.mu.Lock() // 
+	m.last[id] = time.Now().UTC()
+	m.mu.Unlock() // 
+}
+
+// 주기 루프
+func (m *AnnounceManager) Run(ctx context.Context) {
+	ticker := time.NewTicker(m.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.mu.Lock()
+			// snapshot
+			ids := make([]string, 0, len(m.dirty))
+			now := time.Now().UTC()
+			for id := range m.dirty {
+				// TTL의 절반이 지났거나, 아직 한 번도 안 보냈으면 보냄
+				last := m.last[id]
+				if last.IsZero() || now.Sub(last) >= m.interval {
+					ids = append(ids, id)
+				}
+			}
+			m.mu.Unlock()
+
+			for _, id := range ids {
+				// delete(m.dirty, id) // 
+				m.announceOnce(ctx, id)
+			}
+		}
+	}
+}
+
+func createTask(d *dhtnode.Node, ns string, id string, image string, cmd []string) error {
 	now := time.Now().UTC()
 
 	meta := task.TaskMeta{ID: id, Image: image, Command: cmd, CreatedAt: now}
@@ -27,7 +102,7 @@ func createTask(d *dhtnode.Node, id string, image string, cmd []string) error {
 	}
 
 	// index CAS
-	return d.PutJSONCAS(task.IndexKey, func(prev []byte) (bool, []byte, error) {
+	return d.PutJSONCAS(task.KeyIndex(ns), func(prev []byte) (bool, []byte, error) { // 
 		var idx task.TaskIndex
 		if len(prev) > 0 {
 			_ = json.Unmarshal(prev, &idx)
@@ -50,12 +125,13 @@ func createTask(d *dhtnode.Node, id string, image string, cmd []string) error {
 }
 
 // 중앙은 주기 스냅샷만 수행 (보조자)
-func snapshotLoop(d *dhtnode.Node) {
+func snapshotLoop(d *dhtnode.Node, ns string) {
 	t := time.NewTicker(10 * time.Second)
 	defer t.Stop()
 	for range t.C {
 		var idx task.TaskIndex
-		if err := d.GetJSON(task.IndexKey, &idx, 3*time.Second); err != nil {
+		// TODO: This also needs to be namespace-aware if used in production
+		if err := d.GetJSON(task.KeyIndex(ns), &idx, 3*time.Second); err != nil {
 			continue
 		}
 		for _, id := range idx.IDs {
@@ -91,7 +167,9 @@ func main() {
 		}
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	node, err := dhtnode.NewNode(ctx, *ns, boots)
 	if err != nil {
 		log.Fatal(err)
@@ -102,14 +180,23 @@ func main() {
 	for _, a := range node.Multiaddrs() {
 		fmt.Println("[control] addr:", a)
 	}
-    // HTTP 서버 기동
-    mux := mountHTTP(node)
-    go func() {
-        fmt.Println("[control] http listening :8080")
-        if err := http.ListenAndServe(":8080", mux); err != nil {
-            log.Fatal(err)
-        }
-    }()
+
+	// AnnounceManager 생성 및 실행
+	const ttl = 30 * time.Second
+	const interval = ttl / 2
+	mgr := NewAnnounceManager(node, *ns, ttl, interval) // 
+	go mgr.Run(ctx)
+
+	// HTTP 서버 기동 (Enqueue 함수 주입)
+	mux := mountHTTP(node, *ns, mgr.Enqueue)
+	srv := &http.Server{Addr: ":8080", Handler: mux} // 
+	go func() {
+		fmt.Println("[control] http listening :8080")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+	defer srv.Shutdown(ctx) // 
 
 	// 작업 생성
 	if *createStr != "" {
@@ -126,7 +213,7 @@ func main() {
 			if id == "" {
 				continue
 			}
-			if err := createTask(node, id, *image, cmd); err != nil {
+			if err := createTask(node, *ns, id, *image, cmd); err != nil { // 
 				log.Println("[control] create error:", err)
 			} else {
 				log.Println("[control] created task:", id)
@@ -135,5 +222,5 @@ func main() {
 	}
 
 	// 스냅샷 루프
-	snapshotLoop(node)
+	snapshotLoop(node, *ns)
 }
