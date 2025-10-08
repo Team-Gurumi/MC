@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 	"time"
-
+"path/filepath"
 	"github.com/Team-Gurumi/MC/pkg/agent"
 	dhtnode "github.com/Team-Gurumi/MC/pkg/dht"
 	"github.com/Team-Gurumi/MC/pkg/task"
@@ -115,6 +115,30 @@ go func(taskID, nonce string) {
 				cancelJob() 
 			return
 		}
+		// 4) 입력 파일 준비 (매니페스트 로드 및 Fetch)
+inputDir := filepath.Join(workDir, "input")
+if err := os.MkdirAll(inputDir, 0o755); err != nil {
+    _ = finish.Report(context.Background(), jobID, "failed",
+        map[string]any{"error_stage": "create_input_dir"}, "", nil, "create input dir failed: "+err.Error())
+    cancelJob()
+    return
+}
+
+var man task.Manifest
+if err := d.GetJSON(task.KeyManifest(jobID), &man, 3*time.Second); err == nil && man.RootCID != "" {
+    log.Printf("[agent] job=%s fetching input: %s", jobID, man.RootCID)
+    if _, err := agent.FetchAny(context.Background(), d, man.RootCID, man.Providers, inputDir); err != nil {
+        // Fetch 실패 시 종료 보고
+        _ = finish.Report(context.Background(), jobID, "failed",
+            map[string]any{"error_stage": "fetch_input"}, "", nil, "fetch failed: "+err.Error())
+        cancelJob()
+        return
+    }
+    log.Printf("[agent] job=%s fetch complete: %s -> %s", jobID, man.RootCID, inputDir)
+} else {
+    // 매니페스트가 없으면 스킵
+    log.Printf("[agent] job=%s no manifest found, skipping fetch", jobID)
+}
 
 		
 		res, runErr := agent.RunLocal(context.Background(), workDir, meta.Image, meta.Command)

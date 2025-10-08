@@ -41,7 +41,7 @@ func FetchFromProvider(ctx context.Context, d *dhtnode.Node, rootCID string, pv 
 		return nil, fmt.Errorf("peer info: %w", err)
 	}
 
-	// 2) Connect (짧은 타임아웃)
+	// 2) Connect (짧은 타임아웃) 
 	ctx2, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	if err := d.Host.Connect(ctx2, *pi); err != nil {

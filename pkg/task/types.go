@@ -19,14 +19,14 @@ type Lease struct {
     Owner   string    `json:"owner"`
     Nonce   string    `json:"nonce"`
     Expires time.Time `json:"expires"`
-    Version int64     `json:"version"` // 펜싱 카운터
+    Version int64     `json:"version"`
 }
 
 type Artifact struct {
     Name string `json:"name,omitempty"`
     Size int64  `json:"size,omitempty"`
     CID  string `json:"cid,omitempty"`
-    URL  string `json:"url,omitempty"` // optional gateway/proxy
+    URL  string `json:"url,omitempty"`
 }
 
 type TaskMeta struct {
@@ -56,7 +56,7 @@ type Manifest struct {
     Providers  []Provider `json:"providers"`                
     EncMeta    string     `json:"enc_meta,omitempty"`       
     Rendezvous string     `json:"rendezvous,omitempty"`     
-    Transports []string   `json:"transports,omitempty"`    
+    Transports []string   `json:"transports,omitempty"`   
     Version    int64      `json:"version"`
     UpdatedAt  time.Time  `json:"updated_at"`
 
@@ -78,7 +78,7 @@ AssignedTo  string     `json:"assigned_to,omitempty"`
     ResultRootCID string     `json:"result_root_cid,omitempty"`
     Artifacts     []Artifact `json:"artifacts,omitempty"`
     Metrics struct {
-        CPUAvgPct    float64 `json:"cpu_avg_pct,omitempty"`   
+        CPUAvgPct    float64 `json:"cpu_avg_pct,omitempty"`   // 0.0~100.0
         MemPeakBytes int64   `json:"mem_peak_bytes,omitempty"`
         WallSec      int     `json:"wall_sec,omitempty"`
     } `json:"metrics,omitempty"`
@@ -86,7 +86,7 @@ AssignedTo  string     `json:"assigned_to,omitempty"`
     LogTail string `json:"log_tail,omitempty"`
 }
 
-
+// WS/QUIC endpoint (snake_case로 통일)
 type TaskEndpoint struct {
     TaskID   string    `json:"task_id"`
     Proto    string    `json:"proto"`    // "ws" | "wss" | "quic"
@@ -99,6 +99,7 @@ func KeyState(id string) string    { return "task/" + id + "/state" }
 func KeyWS(id string) string       { return "task/" + id + "/ws" }
 func KeyManifest(id string) string { return "task/" + id + "/manifest" }
 
+// 전역 인덱스 (CAS용 Version 포함)
 type TaskIndex struct {
     IDs       []string  `json:"ids"`
     UpdatedAt time.Time `json:"updated_at"`
