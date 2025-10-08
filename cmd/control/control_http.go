@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,10 +18,10 @@ import (
 )
 
 type providerDTO struct {
-	PeerID string   `json:"peer_id"`          // 12D3Koo... 형식
-	Addrs  []string `json:"addrs"`            // libp2p multiaddrs
-	Relays []string `json:"relays,omitempty"` // optional
-	Caps   []string `json:"caps,omitempty"`   // optional: "mc-get/1.0.0", "graphsync", ...
+	PeerID string   `json:"peer_id"`         
+	Addrs  []string `json:"addrs"`           
+	Relays []string `json:"relays,omitempty"` 
+	Caps   []string `json:"caps,omitempty"`   
 }
 
 type manifestInDTO struct {
@@ -45,7 +47,97 @@ type manifestOutDTO struct {
 // manifest 출력용(에이전트용: enc_meta 포함)
 type manifestOutWithSecretDTO struct {
 	manifestOutDTO
-	EncMeta string `json:"enc_meta"` // 반드시 agent 권한에서만
+	EncMeta string `json:"enc_meta"` // agent 권한에서만
+}
+
+
+type tryClaimIn struct {
+	AgentID string `json:"agent_id"`
+	TTLSec  int    `json:"ttl_sec"`
+}
+type hbIn struct {
+	AgentID string `json:"agent_id"`
+	Nonce   string `json:"nonce"`
+	TTLSec  int    `json:"ttl_sec"`
+}
+type releaseIn struct {
+	AgentID string `json:"agent_id"`
+	Nonce   string `json:"nonce"`
+}
+
+type leaseOut struct {
+	OK    bool       `json:"ok"`
+	Lease task.Lease `json:"lease"`
+}
+
+func newNonce() (string, error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b[:]), nil
+}
+
+// ===== /jobs/{id}/finish =====
+
+type finishIn struct {
+	Status    string         `json:"status"`                    
+	Metrics   map[string]any `json:"metrics,omitempty"`          
+	Artifacts []string       `json:"artifacts,omitempty"`        
+	ResultCID string         `json:"result_root_cid,omitempty"`  
+	Error     string         `json:"error,omitempty"`          
+}
+
+func finishHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireAuth(r) { http.Error(w, "unauthorized", http.StatusUnauthorized); return }
+		if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
+
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if len(parts) != 3 || parts[0] != "jobs" || parts[2] != "finish" {
+			http.Error(w, "bad path", http.StatusBadRequest); return
+		}
+		id := parts[1]
+
+		var in finishIn
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest); return
+		}
+
+		// 상태 갱신
+		var st task.TaskState
+		_ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
+		st.ID = id
+		switch strings.ToLower(in.Status) {
+		case "succeeded":
+			st.Status = task.StatusSucceeded
+		default:
+			st.Status = task.StatusFailed
+		}
+		st.UpdatedAt = time.Now()
+
+		//메트릭/결과 저장
+		if in.Metrics != nil {
+			_ = d.PutJSON(fmt.Sprintf("task/%s/metrics", id), in.Metrics)
+		}
+		if in.ResultCID != "" {
+			_ = d.PutJSON(fmt.Sprintf("task/%s/result_root", id), map[string]string{"cid": in.ResultCID})
+		}
+		if len(in.Artifacts) > 0 {
+			_ = d.PutJSON(fmt.Sprintf("task/%s/artifacts", id), in.Artifacts)
+		}
+		_ = d.PutJSON(task.KeyState(id), st)
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+
+func ttlOrDefault(sec int) time.Duration {
+	if sec <= 0 || sec > 3600 {
+		return 30 * time.Second
+	}
+	return time.Duration(sec) * time.Second
 }
 
 var allowedTransports = map[string]bool{
@@ -53,16 +145,13 @@ var allowedTransports = map[string]bool{
 	"webrtc":  true,
 }
 
-// ---- DHT 광고 페이로드 (짧은 TTL/exp 포함) ----
 
-// TASK_AD: 작업 발견용 얕은 광고 (메타만)
 type taskAd struct {
 	JobID     string    `json:"job_id"`
 	Namespace string    `json:"ns,omitempty"`
-	DemandURL string    `json:"demand_url,omitempty"` // Control API base (옵션)
-	Topic     string    `json:"topic,omitempty"`      // Rendezvous 토픽(있으면)
-	Exp       time.Time `json:"exp"`                  // 만료(UTC)
-	Sig       string    `json:"sig,omitempty"`        // (TODO) 서명
+	Topic     string    `json:"topic,omitempty"`      
+	Exp       time.Time `json:"exp"`                  
+	Sig       string    `json:"sig,omitempty"`       
 }
 
 // p2p/<id>/manifest 미러: P2P 좌표만 짧게
@@ -71,11 +160,8 @@ type manifestAd struct {
 	Providers  []task.Provider `json:"providers"`
 	Rendezvous string        `json:"rendezvous,omitempty"`
 	Transports []string      `json:"transports,omitempty"`
-	Exp        time.Time     `json:"exp"` // 만료(UTC)
+	Exp        time.Time     `json:"exp"` 
 }
-
-// ---- 키 유틸 ----
-// 네임스페이스는 ENV로 받아 쓰되, 없으면 "default"
 func getNamespace() string {
 	if v := os.Getenv("MC_NS"); v != "" {
 		return v
@@ -83,10 +169,6 @@ func getNamespace() string {
 	return "default"
 }
 
-// Control의 외부 접근 base URL을 ENV로 주입(옵션)
-func getDemandURL() string {
-	return os.Getenv("MC_DEMAND_URL") // e.g. https://control.example.com
-}
 
 func keyTaskAd(ns, id string) string        { return "ad/" + ns + "/task/" + id }
 func keyP2PManifestMirror(id string) string { return "p2p/" + id + "/manifest" }
@@ -98,20 +180,23 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 }
 
 func requireAuth(r *http.Request) bool {
-	// 데모용: CONTROL_TOKEN 이 설정되면 Bearer 검증, 없으면 무조건 통과
-	want := os.Getenv("CONTROL_TOKEN")
-	if want == "" {
-		return true
-	}
-	got := r.Header.Get("Authorization")
-	return got == ("Bearer " + want)
+    if os.Getenv("MC_DISABLE_AUTH") == "1" {
+        return true
+    }
+    want := os.Getenv("CONTROL_TOKEN")
+    if want == "" {
+        return false
+    }
+    got := r.Header.Get("Authorization")
+    return got == ("Bearer " + want)
 }
+
 
 func addToIndex(d *dhtnode.Node, ns, id string) error {
 	var idx task.TaskIndex
-	key := task.KeyIndex(ns) // 
+	key := task.KeyIndex(ns) //
 	if err := d.GetJSON(key, &idx, 2*time.Second); err != nil {
-		// not found -> 새로 생성
+		
 		idx = task.TaskIndex{IDs: []string{id}, UpdatedAt: time.Now(), Version: 1}
 		return d.PutJSON(key, idx)
 	}
@@ -164,16 +249,10 @@ func createTaskHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 			http.Error(w, "dht put state failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		  _ = addToIndex(d, ns, req.ID)
-		// 데모: Demand/P2P 지시사항 흉내
-		resp := map[string]any{
-			"job_id": req.ID,
-			"p2p_instructions": map[string]any{
-				"allowed_peer_policy": "any", // demo
-				"agent_pubkey":        "",    // demo
-			},
-		}
-		writeJSON(w, 200, resp)
+	 if err := addToIndex(d, ns, req.ID); err != nil {
+  
+ }
+writeJSON(w, http.StatusCreated, map[string]any{"job_id": req.ID})
 	}
 }
 
@@ -202,7 +281,7 @@ func getTaskHandler(d *dhtnode.Node) http.HandlerFunc {
 		var result map[string]any
 		_ = d.GetJSON(fmt.Sprintf("task/%s/result", id), &result, 1*time.Second)
 
-		// manifest 읽기 (없으면 스킵)
+		
 		var man task.Manifest
 		hasManifest := false
 		if err := d.GetJSON(task.KeyManifest(id), &man, 2*time.Second); err == nil && man.RootCID != "" {
@@ -211,7 +290,7 @@ func getTaskHandler(d *dhtnode.Node) http.HandlerFunc {
 
 		var outMan *manifestOutDTO
 		if hasManifest {
-			// EncMeta는 여기서 절대 노출하지 않음
+			
 			m := &manifestOutDTO{
 				RootCID:    man.RootCID,
 				Providers:  make([]providerDTO, len(man.Providers)),
@@ -231,7 +310,7 @@ func getTaskHandler(d *dhtnode.Node) http.HandlerFunc {
 			outMan = m
 		}
 
-		// 기존 응답 페이로드에 manifest를 추가
+		
 		resp := map[string]any{
 			"meta":   meta,
 			"state":  st,
@@ -306,7 +385,7 @@ func manifestHandler(d *dhtnode.Node, enqueue func(string)) http.HandlerFunc {
 			return
 		}
 
-		// 여기서 바로 dht에 광고하지 않고, 매니저 큐에 요청만 넣는다.
+		
 		enqueue(id)
 
 		w.WriteHeader(http.StatusNoContent)
@@ -334,49 +413,168 @@ func logsHandler(d *dhtnode.Node) http.HandlerFunc {
 	}
 }
 
-// ===== POST /jobs/{id}/finish =====
 
-func finishHandler(d *dhtnode.Node) http.HandlerFunc {
+func tryClaimHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireAuth(r) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/") // jobs/{id}/finish
-		if len(parts) != 3 || parts[0] != "jobs" || parts[2] != "finish" {
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if len(parts) != 4 || parts[0] != "api" || parts[1] != "tasks" || parts[3] != "try-claim" {
 			http.Error(w, "bad path", http.StatusBadRequest)
 			return
 		}
-		id := parts[1]
+		id := parts[2]
 
-		var p map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-			http.Error(w, "bad json", http.StatusBadRequest)
+		var in tryClaimIn
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		ttl := ttlOrDefault(in.TTLSec)
+
+		var cur task.Lease
+		_ = d.GetJSON(task.KeyLease(id), &cur, 2*time.Second)
+
+		now := time.Now().UTC()
+		alive := cur.Owner != "" && cur.Expires.After(now)
+		if alive && cur.Owner != in.AgentID {
+			http.Error(w, "conflict: owned", http.StatusConflict)
+			return
+		}
+
+		nz, err := newNonce()
+		if err != nil {
+			http.Error(w, "nonce err", http.StatusInternalServerError)
+			return
+		}
+
+		next := task.Lease{
+			Owner:   in.AgentID,
+			Nonce:   nz,
+			Expires: now.Add(ttl),
+			Version: cur.Version + 1,
+		}
+
+		
+		if err := d.PutJSON(task.KeyLease(id), next); err != nil {
+			http.Error(w, "store err: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		
 		var st task.TaskState
 		_ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
-		switch fmt.Sprint(p["status"]) {
-		case "succeeded":
-			st.Status = task.StatusFinished
-		default:
-			st.Status = task.StatusFailed
+		if st.ID != "" { 
+			st.Status = task.StatusAssigned
+			st.AssignedTo = in.AgentID
+			st.UpdatedAt = now
+			st.Version++
+			_ = d.PutJSON(task.KeyState(id), st)
 		}
-		st.UpdatedAt = time.Now()
-		st.Version++
-		_ = d.PutJSON(task.KeyState(id), st)
 
-		if cid, ok := p["result_root_cid"].(string); ok && cid != "" {
-			_ = d.PutJSON(fmt.Sprintf("task/%s/result", id), map[string]any{"cid": cid})
-		}
-		w.WriteHeader(http.StatusNoContent)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(leaseOut{OK: true, Lease: next})
 	}
 }
 
-// --- [새로운 핸들러 추가 시작] ---
+func heartbeatHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireAuth(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if len(parts) != 4 || parts[0] != "api" || parts[1] != "tasks" || parts[3] != "heartbeat" {
+			http.Error(w, "bad path", http.StatusBadRequest)
+			return
+		}
+		id := parts[2]
+
+		var in hbIn
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		ttl := ttlOrDefault(in.TTLSec)
+
+		var cur task.Lease
+		if err := d.GetJSON(task.KeyLease(id), &cur, 2*time.Second); err != nil || cur.Owner == "" {
+			http.Error(w, "no lease", http.StatusNotFound)
+			return
+		}
+		if cur.Owner != in.AgentID || cur.Nonce != in.Nonce {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		cur.Expires = time.Now().UTC().Add(ttl)
+		cur.Version++
+
+		if err := d.PutJSON(task.KeyLease(id), cur); err != nil {
+			http.Error(w, "store err: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(leaseOut{OK: true, Lease: cur})
+	}
+}
+
+func releaseHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireAuth(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if len(parts) != 4 || parts[0] != "api" || parts[1] != "tasks" || parts[3] != "release" {
+			http.Error(w, "bad path", http.StatusBadRequest)
+			return
+		}
+		id := parts[2]
+
+		var in releaseIn
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var cur task.Lease
+		if err := d.GetJSON(task.KeyLease(id), &cur, 2*time.Second); err != nil || cur.Owner == "" {
+			http.Error(w, "no lease", http.StatusNotFound)
+			return
+		}
+		if cur.Owner != in.AgentID || cur.Nonce != in.Nonce {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		 
+		cur.Expires = time.Now().UTC()
+		cur.Version++
+		_ = d.PutJSON(task.KeyLease(id), cur)
+
+		
+		var st task.TaskState
+		_ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
+		if st.ID != "" && st.AssignedTo == in.AgentID {
+			st.Status = task.StatusQueued
+			st.AssignedTo = ""
+			st.UpdatedAt = time.Now().UTC()
+			st.Version++
+			_ = d.PutJSON(task.KeyState(id), st)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}
+}
+
 func agentManifestHandler(d *dhtnode.Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// 경로: /internal/agents/{id}/manifest
+		
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 		if len(parts) != 4 || parts[0] != "internal" || parts[1] != "agents" || parts[3] != "manifest" {
 			http.Error(w, "bad path", http.StatusBadRequest)
@@ -384,7 +582,7 @@ func agentManifestHandler(d *dhtnode.Node) http.HandlerFunc {
 		}
 		id := parts[2]
 
-		// 임시 토큰 검증 (다음 단계에서 강화/대체 예정)
+	
 		token := r.URL.Query().Get("token")
 		if token == "" || !validateAgentToken(token, id) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -397,7 +595,7 @@ func agentManifestHandler(d *dhtnode.Node) http.HandlerFunc {
 			return
 		}
 
-		// enc_meta 포함하여 반환(에이전트 전용)
+		
 		out := manifestOutWithSecretDTO{
 			manifestOutDTO: manifestOutDTO{
 				RootCID:    man.RootCID,
@@ -421,41 +619,56 @@ func agentManifestHandler(d *dhtnode.Node) http.HandlerFunc {
 	}
 }
 
-// 최소 토큰 검증(임시). 다음 단계에서 실제 서명/키 교환으로 교체.
+
 func validateAgentToken(token, taskID string) bool {
 	// TODO: Control이 발급/검증하는 HMAC 또는 Ed25519 서명 토큰으로 교체
 	return len(token) > 10 && strings.Contains(token, taskID)
 }
 
-// --- [새로운 핸들러 추가 끝] ---
 
-// ===== 라우팅 등록 =====
 
- func mountHTTP(d *dhtnode.Node, ns string, enqueue func(string)) *http.ServeMux {
+func mountHTTP(d *dhtnode.Node, ns string, enqueue func(string)) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/api/tasks", createTaskHandler(d, ns))
 	mux.Handle("/api/tasks/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		
+		if r.Method == http.MethodPost {
+			if strings.HasSuffix(r.URL.Path, "/try-claim") {
+				tryClaimHandler(d, ns).ServeHTTP(w, r)
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/heartbeat") {
+				heartbeatHandler(d, ns).ServeHTTP(w, r)
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/release") {
+				releaseHandler(d, ns).ServeHTTP(w, r)
+				return
+			}
+		}
+
+
 		if strings.HasSuffix(r.URL.Path, "/logs") {
 			logsHandler(d).ServeHTTP(w, r)
 			return
 		}
 		getTaskHandler(d).ServeHTTP(w, r)
 	}))
+mux.Handle("/jobs/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    if strings.HasSuffix(r.URL.Path, "/manifest") {
+        manifestHandler(d, enqueue).ServeHTTP(w, r)
+        return
+    }
+    if strings.HasSuffix(r.URL.Path, "/finish") {
+      
+        finishHandler(d, ns).ServeHTTP(w, r)
+        return
+    }
+    http.NotFound(w, r)
+}))
 
-	mux.Handle("/jobs/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/manifest") {
-			manifestHandler(d, enqueue).ServeHTTP(w, r)
-			return
-		}
-		if strings.HasSuffix(r.URL.Path, "/finish") {
-			finishHandler(d).ServeHTTP(w, r)
-			return
-		}
-		http.NotFound(w, r)
-	}))
+	
 
-	// --- [라우팅 추가] ---
-	mux.HandleFunc("/internal/agents/", agentManifestHandler(d).ServeHTTP)
 
 	return mux
 }
@@ -498,18 +711,16 @@ func announceAds(ctx context.Context, d *dhtnode.Node, ns, id string, man *task.
 	// 1) TASK_AD
 	ad := taskAd{
 		JobID:     id,
-		Namespace: ns, // 
-		DemandURL: getDemandURL(),
-		Topic:     man.Rendezvous, // 있으면 채움
+		Namespace: ns, 
+		Topic:     man.Rendezvous, 
 		Exp:       exp,
-		// Sig:    TODO: 서명 붙이기(다음 단계)
+		// Sig:    TODO: 서명 붙이기
 	}
 	if err := d.PutJSON(keyTaskAd(ns, id), ad); err != nil {
-		// 실패는 로그만 — 광고는 베스트에포트
+	
 		// log.Printf("[ad] task_ad put err: %v", err)
 	}
 
-	// 2) p2p/<id>/manifest 미러 (Providers만 싣는 얕은 페이로드)
 	m := manifestAd{
 		RootCID:    man.RootCID,
 		Providers:  man.Providers,

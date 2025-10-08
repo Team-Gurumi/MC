@@ -15,21 +15,20 @@ import (
 	"github.com/Team-Gurumi/MC/pkg/task"
 )
 
-// --- 광고 재게시 매니저 ---
 type AnnounceManager struct {
 	d        *dhtnode.Node
-	ns       string               // 
-	ttl      time.Duration        // 광고 TTL (예: 30s)
-	interval time.Duration        // 재게시 주기 (보통 ttl/2)
+	ns       string             
+	ttl      time.Duration       
+	interval time.Duration       
 	mu       sync.Mutex
-	dirty    map[string]struct{}  // 재게시가 필요한 job ID 집합
-	last     map[string]time.Time // 마지막 게시 시각
+	dirty    map[string]struct{} 
+	last     map[string]time.Time 
 }
 
 func NewAnnounceManager(d *dhtnode.Node, ns string, ttl, interval time.Duration) *AnnounceManager {
 	return &AnnounceManager{
 		d:        d,
-		ns:       ns, // 
+		ns:       ns, 
 		ttl:      ttl,
 		interval: interval,
 		dirty:    make(map[string]struct{}),
@@ -37,28 +36,26 @@ func NewAnnounceManager(d *dhtnode.Node, ns string, ttl, interval time.Duration)
 	}
 }
 
-// 외부에서 호출: 큐에 넣기
 func (m *AnnounceManager) Enqueue(id string) {
 	m.mu.Lock()
 	m.dirty[id] = struct{}{}
 	m.mu.Unlock()
 }
 
-// 내부: 한 건 게시(이미 control_http.go에 만든 announceAds를 그대로 재사용)
+
 func (m *AnnounceManager) announceOnce(ctx context.Context, id string) {
-	// manifest를 읽어서 없으면 스킵 (광고는 베스트에포트)
+	
 	var man task.Manifest
 	if err := m.d.GetJSON(task.KeyManifest(id), &man, 2*time.Second); err != nil || man.RootCID == "" {
 		return
 	}
-	announceAds(ctx, m.d, m.ns, id, &man, m.ttl) // 
+	announceAds(ctx, m.d, m.ns, id, &man, m.ttl)
 
-	m.mu.Lock() // 
+	m.mu.Lock() 
 	m.last[id] = time.Now().UTC()
-	m.mu.Unlock() // 
+	m.mu.Unlock() 
 }
 
-// 주기 루프
 func (m *AnnounceManager) Run(ctx context.Context) {
 	ticker := time.NewTicker(m.interval)
 	defer ticker.Stop()
@@ -73,8 +70,7 @@ func (m *AnnounceManager) Run(ctx context.Context) {
 			ids := make([]string, 0, len(m.dirty))
 			now := time.Now().UTC()
 			for id := range m.dirty {
-				// TTL의 절반이 지났거나, 아직 한 번도 안 보냈으면 보냄
-				last := m.last[id]
+								last := m.last[id]
 				if last.IsZero() || now.Sub(last) >= m.interval {
 					ids = append(ids, id)
 				}
@@ -82,7 +78,7 @@ func (m *AnnounceManager) Run(ctx context.Context) {
 			m.mu.Unlock()
 
 			for _, id := range ids {
-				// delete(m.dirty, id) // 
+				 
 				m.announceOnce(ctx, id)
 			}
 		}
@@ -124,7 +120,6 @@ func createTask(d *dhtnode.Node, ns string, id string, image string, cmd []strin
 	})
 }
 
-// 중앙은 주기 스냅샷만 수행 (보조자)
 func snapshotLoop(d *dhtnode.Node, ns string) {
 	t := time.NewTicker(10 * time.Second)
 	defer t.Stop()
@@ -180,23 +175,25 @@ func main() {
 	for _, a := range node.Multiaddrs() {
 		fmt.Println("[control] addr:", a)
 	}
+	
+
 
 	// AnnounceManager 생성 및 실행
 	const ttl = 30 * time.Second
 	const interval = ttl / 2
-	mgr := NewAnnounceManager(node, *ns, ttl, interval) // 
+	mgr := NewAnnounceManager(node, *ns, ttl, interval) 
 	go mgr.Run(ctx)
 
-	// HTTP 서버 기동 (Enqueue 함수 주입)
+	// HTTP 서버 기동 
 	mux := mountHTTP(node, *ns, mgr.Enqueue)
-	srv := &http.Server{Addr: ":8080", Handler: mux} // 
+	srv := &http.Server{Addr: ":8080", Handler: mux} 
 	go func() {
 		fmt.Println("[control] http listening :8080")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
 	}()
-	defer srv.Shutdown(ctx) // 
+	defer srv.Shutdown(ctx) 
 
 	// 작업 생성
 	if *createStr != "" {
@@ -213,7 +210,7 @@ func main() {
 			if id == "" {
 				continue
 			}
-			if err := createTask(node, *ns, id, *image, cmd); err != nil { // 
+			if err := createTask(node, *ns, id, *image, cmd); err != nil { 
 				log.Println("[control] create error:", err)
 			} else {
 				log.Println("[control] created task:", id)

@@ -2,7 +2,7 @@ package task
 
 import "time"
 
-type ClaimRecord struct { // 이름을 변경
+type ClaimRecord struct {
     TaskID    string    `json:"taskId"`
     Owner     string    `json:"owner"`     
     Nonce     string    `json:"nonce"`
@@ -10,7 +10,7 @@ type ClaimRecord struct { // 이름을 변경
     UpdatedAt time.Time `json:"updatedAt"`
 }
 
-func KeyLease(id string) string { return "task/" + id + "/lease" }
+
 // TTL/하트비트 간격
 const (
 	DefaultLeaseTTL     = 15 * time.Second
