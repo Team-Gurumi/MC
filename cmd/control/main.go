@@ -125,7 +125,7 @@ func snapshotLoop(d *dhtnode.Node, ns string) {
 	defer t.Stop()
 	for range t.C {
 		var idx task.TaskIndex
-		// TODO: This also needs to be namespace-aware if used in production
+		// TODO: 프로덕션에서 사용할 경우 네임스페이스 인식 기능도 필요합니다
 		if err := d.GetJSON(task.KeyIndex(ns), &idx, 3*time.Second); err != nil {
 			continue
 		}
@@ -171,11 +171,25 @@ func main() {
 	}
 	defer node.Close()
 
-	fmt.Println("[control] PeerID:", node.Host.ID().String())
-	for _, a := range node.Multiaddrs() {
-		fmt.Println("[control] addr:", a)
-	}
 	
+   fmt.Println("[control] PeerID:", node.Host.ID().String())
+    for _, a := range node.Multiaddrs() {
+        fmt.Println("[control] addr:", a)
+    }
+
+    //추가: 트스트랩 피어가 비어 있으면 스스로 루트 노드로 동작
+    if len(boots) == 0 {
+        log.Println("[control] no bootstrap peers provided; acting as DHT seed node")
+    } else {
+        // 여러 피어를 부트스트랩에 연결
+        for _, maddr := range boots {
+            if err := node.Connect(ctx, maddr); err != nil {
+                log.Printf("[control] bootstrap connect failed %s: %v", maddr, err)
+            } else {
+                log.Printf("[control] connected bootstrap peer %s", maddr)
+            }
+        }
+    }
 
 
 	// AnnounceManager 생성 및 실행

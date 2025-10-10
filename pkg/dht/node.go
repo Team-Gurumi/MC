@@ -232,3 +232,15 @@ func (n *Node) PutJSONCAS(key string, check func(prev []byte) (ok bool, next []b
 	}
 	return lastErr
 }
+func (n *Node) Connect(ctx context.Context, maddrStr string) error {
+	m, err := multiaddr.NewMultiaddr(maddrStr)
+	if err != nil {
+		return fmt.Errorf("bad multiaddr %q: %w", maddrStr, err)
+	}
+	info, err := peer.AddrInfoFromP2pAddr(m)
+	if err != nil {
+		return fmt.Errorf("bad p2p addr %q: %w", maddrStr, err)
+	}
+	return n.Host.Connect(ctx, *info)
+}
+
