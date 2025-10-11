@@ -77,11 +77,7 @@ AssignedTo  string     `json:"assigned_to,omitempty"`
     Error         string     `json:"error,omitempty"`
     ResultRootCID string     `json:"result_root_cid,omitempty"`
     Artifacts     []Artifact `json:"artifacts,omitempty"`
-    Metrics struct {
-        CPUAvgPct    float64 `json:"cpu_avg_pct,omitempty"`   // 0.0~100.0
-        MemPeakBytes int64   `json:"mem_peak_bytes,omitempty"`
-        WallSec      int     `json:"wall_sec,omitempty"`
-    } `json:"metrics,omitempty"`
+  Metrics map[string]any `json:"metrics,omitempty"`
 
     LogTail string `json:"log_tail,omitempty"`
 }

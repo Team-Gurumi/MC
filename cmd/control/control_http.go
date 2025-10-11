@@ -18,10 +18,10 @@ import (
 )
 
 type providerDTO struct {
-	PeerID string   `json:"peer_id"`         
-	Addrs  []string `json:"addrs"`           
-	Relays []string `json:"relays,omitempty"` 
-	Caps   []string `json:"caps,omitempty"`   
+	PeerID string   `json:"peer_id"`
+	Addrs  []string `json:"addrs"`
+	Relays []string `json:"relays,omitempty"`
+	Caps   []string `json:"caps,omitempty"`
 }
 
 type manifestInDTO struct {
@@ -49,7 +49,6 @@ type manifestOutWithSecretDTO struct {
 	manifestOutDTO
 	EncMeta string `json:"enc_meta"` // agent 권한에서만
 }
-
 
 type tryClaimIn struct {
 	AgentID string `json:"agent_id"`
@@ -81,27 +80,35 @@ func newNonce() (string, error) {
 // ===== /jobs/{id}/finish =====
 
 type finishIn struct {
-	Status    string         `json:"status"`                    
-	Metrics   map[string]any `json:"metrics,omitempty"`          
-	Artifacts []string       `json:"artifacts,omitempty"`        
-	ResultCID string         `json:"result_root_cid,omitempty"`  
-	Error     string         `json:"error,omitempty"`          
+	Status    string         `json:"status"`
+	Metrics   map[string]any `json:"metrics,omitempty"`
+	Artifacts []string       `json:"artifacts,omitempty"`
+	ResultCID string         `json:"result_root_cid,omitempty"`
+	Error     string         `json:"error,omitempty"`
 }
 
 func finishHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !requireAuth(r) { http.Error(w, "unauthorized", http.StatusUnauthorized); return }
-		if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
+		if !requireAuth(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 		if len(parts) != 3 || parts[0] != "jobs" || parts[2] != "finish" {
-			http.Error(w, "bad path", http.StatusBadRequest); return
+			http.Error(w, "bad path", http.StatusBadRequest)
+			return
 		}
 		id := parts[1]
 
 		var in finishIn
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest); return
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
 		}
 
 		// 상태 갱신
@@ -114,14 +121,27 @@ func finishHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 		default:
 			st.Status = task.StatusFailed
 		}
-		st.UpdatedAt = time.Now()
+		now := time.Now().UTC()
+		st.UpdatedAt = now
+		
+		st.FinishedAt = &now
+
+		 if st.StartedAt != nil { // st.StartedAt이 포인터이므로 nil인지 확인
+			if in.Metrics == nil {
+				in.Metrics = make(map[string]any)
+			}
+			in.Metrics["duration_ms"] = now.Sub(*st.StartedAt).Milliseconds()
+		}
 
 		//메트릭/결과 저장
 		if in.Metrics != nil {
+			
+			st.Metrics = in.Metrics
 			_ = d.PutJSON(fmt.Sprintf("task/%s/metrics", id), in.Metrics)
 		}
 		if in.ResultCID != "" {
 			_ = d.PutJSON(fmt.Sprintf("task/%s/result_root", id), map[string]string{"cid": in.ResultCID})
+			 st.ResultRootCID = in.ResultCID
 		}
 		if len(in.Artifacts) > 0 {
 			_ = d.PutJSON(fmt.Sprintf("task/%s/artifacts", id), in.Artifacts)
@@ -131,7 +151,6 @@ func finishHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
-
 
 func ttlOrDefault(sec int) time.Duration {
 	if sec <= 0 || sec > 3600 {
@@ -145,13 +164,12 @@ var allowedTransports = map[string]bool{
 	"webrtc":  true,
 }
 
-
 type taskAd struct {
 	JobID     string    `json:"job_id"`
 	Namespace string    `json:"ns,omitempty"`
-	Topic     string    `json:"topic,omitempty"`      
-	Exp       time.Time `json:"exp"`                  
-	Sig       string    `json:"sig,omitempty"`       
+	Topic     string    `json:"topic,omitempty"`
+	Exp       time.Time `json:"exp"`
+	Sig       string    `json:"sig,omitempty"`
 }
 
 // p2p/<id>/manifest 미러: P2P 좌표만 짧게
@@ -160,15 +178,15 @@ type manifestAd struct {
 	Providers  []task.Provider `json:"providers"`
 	Rendezvous string        `json:"rendezvous,omitempty"`
 	Transports []string      `json:"transports,omitempty"`
-	Exp        time.Time     `json:"exp"` 
+	Exp        time.Time     `json:"exp"`
 }
+
 func getNamespace() string {
 	if v := os.Getenv("MC_NS"); v != "" {
 		return v
 	}
 	return "default"
 }
-
 
 func keyTaskAd(ns, id string) string        { return "ad/" + ns + "/task/" + id }
 func keyP2PManifestMirror(id string) string { return "p2p/" + id + "/manifest" }
@@ -180,23 +198,22 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 }
 
 func requireAuth(r *http.Request) bool {
-    if os.Getenv("MC_DISABLE_AUTH") == "1" {
-        return true
-    }
-    want := os.Getenv("CONTROL_TOKEN")
-    if want == "" {
-        return false
-    }
-    got := r.Header.Get("Authorization")
-    return got == ("Bearer " + want)
+	if os.Getenv("MC_DISABLE_AUTH") == "1" {
+		return true
+	}
+	want := os.Getenv("CONTROL_TOKEN")
+	if want == "" {
+		return false
+	}
+	got := r.Header.Get("Authorization")
+	return got == ("Bearer " + want)
 }
-
 
 func addToIndex(d *dhtnode.Node, ns, id string) error {
 	var idx task.TaskIndex
 	key := task.KeyIndex(ns) //
 	if err := d.GetJSON(key, &idx, 2*time.Second); err != nil {
-		
+
 		idx = task.TaskIndex{IDs: []string{id}, UpdatedAt: time.Now(), Version: 1}
 		return d.PutJSON(key, idx)
 	}
@@ -237,6 +254,8 @@ func createTaskHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 		meta := task.TaskMeta{
 			Image:   req.Image,
 			Command: req.Command,
+			
+			CreatedAt: time.Now().UTC(),
 		}
 		if err := d.PutJSON(task.KeyMeta(req.ID), meta); err != nil {
 			http.Error(w, "dht put meta failed: "+err.Error(), http.StatusInternalServerError)
@@ -249,10 +268,11 @@ func createTaskHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 			http.Error(w, "dht put state failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-	 if err := addToIndex(d, ns, req.ID); err != nil {
-  
- }
-writeJSON(w, http.StatusCreated, map[string]any{"job_id": req.ID})
+		if err := addToIndex(d, ns, req.ID); err != nil {
+			http.Error(w, "index update failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"job_id": req.ID})
 	}
 }
 
@@ -278,10 +298,31 @@ func getTaskHandler(d *dhtnode.Node) http.HandlerFunc {
 		}
 		var st task.TaskState
 		_ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
-		var result map[string]any
-		_ = d.GetJSON(fmt.Sprintf("task/%s/result", id), &result, 1*time.Second)
 
 		
+		var metrics map[string]any
+		_ = d.GetJSON(fmt.Sprintf("task/%s/metrics", id), &metrics, 2*time.Second)
+		if metrics == nil {
+			metrics = make(map[string]any)
+		}
+
+		var artifacts []string
+		_ = d.GetJSON(fmt.Sprintf("task/%s/artifacts", id), &artifacts, 2*time.Second)
+		if artifacts == nil {
+			artifacts = make([]string, 0)
+		}
+
+		var resultRoot map[string]string
+		_ = d.GetJSON(fmt.Sprintf("task/%s/result_root", id), &resultRoot, 2*time.Second)
+
+		
+		var result any
+		if cid, ok := resultRoot["cid"]; ok && cid != "" {
+			result = map[string]string{"root_cid": cid}
+		} else {
+			result = make(map[string]any) // Return empty object instead of null
+		}
+
 		var man task.Manifest
 		hasManifest := false
 		if err := d.GetJSON(task.KeyManifest(id), &man, 2*time.Second); err == nil && man.RootCID != "" {
@@ -290,7 +331,6 @@ func getTaskHandler(d *dhtnode.Node) http.HandlerFunc {
 
 		var outMan *manifestOutDTO
 		if hasManifest {
-			
 			m := &manifestOutDTO{
 				RootCID:    man.RootCID,
 				Providers:  make([]providerDTO, len(man.Providers)),
@@ -310,18 +350,20 @@ func getTaskHandler(d *dhtnode.Node) http.HandlerFunc {
 			outMan = m
 		}
 
-		
+		st.Metrics = nil
+
 		resp := map[string]any{
-			"meta":   meta,
-			"state":  st,
-			"result": result,
+			"meta":      meta,
+			"state":     st,
+			"metrics":   metrics,
+			"artifacts": artifacts,
+			"result":    result,
 		}
 		if outMan != nil {
 			resp["manifest"] = outMan
 		}
 
 		writeJSON(w, http.StatusOK, resp)
-
 	}
 }
 
@@ -362,6 +404,11 @@ func manifestHandler(d *dhtnode.Node, enqueue func(string)) http.HandlerFunc {
 			}
 		}
 
+		
+		if in.UpdatedAt.IsZero() {
+			in.UpdatedAt = time.Now().UTC()
+		}
+
 		man := task.Manifest{
 			RootCID:    in.RootCID,
 			Providers:  make([]task.Provider, len(in.Providers)),
@@ -385,7 +432,6 @@ func manifestHandler(d *dhtnode.Node, enqueue func(string)) http.HandlerFunc {
 			return
 		}
 
-		
 		enqueue(id)
 
 		w.WriteHeader(http.StatusNoContent)
@@ -412,7 +458,6 @@ func logsHandler(d *dhtnode.Node) http.HandlerFunc {
 		writeJSON(w, 200, map[string]any{"endpoint": endp, "token": tkn})
 	}
 }
-
 
 func tryClaimHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -457,19 +502,21 @@ func tryClaimHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 			Version: cur.Version + 1,
 		}
 
-		
 		if err := d.PutJSON(task.KeyLease(id), next); err != nil {
 			http.Error(w, "store err: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		
 		var st task.TaskState
 		_ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
-		if st.ID != "" { 
+		if st.ID != "" {
 			st.Status = task.StatusAssigned
 			st.AssignedTo = in.AgentID
 			st.UpdatedAt = now
+			
+			if st.StartedAt == nil { 
+    st.StartedAt = &now 
+}
 			st.Version++
 			_ = d.PutJSON(task.KeyState(id), st)
 		}
@@ -551,12 +598,10 @@ func releaseHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 			return
 		}
 
-		 
 		cur.Expires = time.Now().UTC()
 		cur.Version++
 		_ = d.PutJSON(task.KeyLease(id), cur)
 
-		
 		var st task.TaskState
 		_ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
 		if st.ID != "" && st.AssignedTo == in.AgentID {
@@ -574,7 +619,7 @@ func releaseHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 
 func agentManifestHandler(d *dhtnode.Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		
+
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 		if len(parts) != 4 || parts[0] != "internal" || parts[1] != "agents" || parts[3] != "manifest" {
 			http.Error(w, "bad path", http.StatusBadRequest)
@@ -582,7 +627,6 @@ func agentManifestHandler(d *dhtnode.Node) http.HandlerFunc {
 		}
 		id := parts[2]
 
-	
 		token := r.URL.Query().Get("token")
 		if token == "" || !validateAgentToken(token, id) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -595,7 +639,6 @@ func agentManifestHandler(d *dhtnode.Node) http.HandlerFunc {
 			return
 		}
 
-		
 		out := manifestOutWithSecretDTO{
 			manifestOutDTO: manifestOutDTO{
 				RootCID:    man.RootCID,
@@ -619,19 +662,16 @@ func agentManifestHandler(d *dhtnode.Node) http.HandlerFunc {
 	}
 }
 
-
 func validateAgentToken(token, taskID string) bool {
 	// TODO: Control이 발급/검증하는 HMAC 또는 Ed25519 서명 토큰으로 교체
 	return len(token) > 10 && strings.Contains(token, taskID)
 }
 
-
-
 func mountHTTP(d *dhtnode.Node, ns string, enqueue func(string)) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/api/tasks", createTaskHandler(d, ns))
 	mux.Handle("/api/tasks/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		
+
 		if r.Method == http.MethodPost {
 			if strings.HasSuffix(r.URL.Path, "/try-claim") {
 				tryClaimHandler(d, ns).ServeHTTP(w, r)
@@ -647,28 +687,23 @@ func mountHTTP(d *dhtnode.Node, ns string, enqueue func(string)) *http.ServeMux 
 			}
 		}
 
-
 		if strings.HasSuffix(r.URL.Path, "/logs") {
 			logsHandler(d).ServeHTTP(w, r)
 			return
 		}
 		getTaskHandler(d).ServeHTTP(w, r)
 	}))
-mux.Handle("/jobs/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-    if strings.HasSuffix(r.URL.Path, "/manifest") {
-        manifestHandler(d, enqueue).ServeHTTP(w, r)
-        return
-    }
-    if strings.HasSuffix(r.URL.Path, "/finish") {
-      
-        finishHandler(d, ns).ServeHTTP(w, r)
-        return
-    }
-    http.NotFound(w, r)
-}))
-
-	
-
+	mux.Handle("/jobs/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/manifest") {
+			manifestHandler(d, enqueue).ServeHTTP(w, r)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/finish") {
+			finishHandler(d, ns).ServeHTTP(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	}))
 
 	return mux
 }
@@ -711,13 +746,13 @@ func announceAds(ctx context.Context, d *dhtnode.Node, ns, id string, man *task.
 	// 1) TASK_AD
 	ad := taskAd{
 		JobID:     id,
-		Namespace: ns, 
-		Topic:     man.Rendezvous, 
+		Namespace: ns,
+		Topic:     man.Rendezvous,
 		Exp:       exp,
 		// Sig:    TODO: 서명 붙이기
 	}
 	if err := d.PutJSON(keyTaskAd(ns, id), ad); err != nil {
-	
+
 		// log.Printf("[ad] task_ad put err: %v", err)
 	}
 
