@@ -6,14 +6,86 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	dhtnode "github.com/Team-Gurumi/MC/pkg/dht"
 	"github.com/Team-Gurumi/MC/pkg/task"
 )
 
-func createTask(d *dhtnode.Node, id string, image string, cmd []string) error {
+type AnnounceManager struct {
+	d        *dhtnode.Node
+	ns       string             
+	ttl      time.Duration       
+	interval time.Duration       
+	mu       sync.Mutex
+	dirty    map[string]struct{} 
+	last     map[string]time.Time 
+}
+
+func NewAnnounceManager(d *dhtnode.Node, ns string, ttl, interval time.Duration) *AnnounceManager {
+	return &AnnounceManager{
+		d:        d,
+		ns:       ns, 
+		ttl:      ttl,
+		interval: interval,
+		dirty:    make(map[string]struct{}),
+		last:     make(map[string]time.Time),
+	}
+}
+
+func (m *AnnounceManager) Enqueue(id string) {
+	m.mu.Lock()
+	m.dirty[id] = struct{}{}
+	m.mu.Unlock()
+}
+
+
+func (m *AnnounceManager) announceOnce(ctx context.Context, id string) {
+	
+	var man task.Manifest
+	if err := m.d.GetJSON(task.KeyManifest(id), &man, 2*time.Second); err != nil || man.RootCID == "" {
+		return
+	}
+	announceAds(ctx, m.d, m.ns, id, &man, m.ttl)
+
+	m.mu.Lock() 
+	m.last[id] = time.Now().UTC()
+	m.mu.Unlock() 
+}
+
+func (m *AnnounceManager) Run(ctx context.Context) {
+	ticker := time.NewTicker(m.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.mu.Lock()
+			// snapshot
+			ids := make([]string, 0, len(m.dirty))
+			now := time.Now().UTC()
+			for id := range m.dirty {
+								last := m.last[id]
+				if last.IsZero() || now.Sub(last) >= m.interval {
+					ids = append(ids, id)
+				}
+			}
+			m.mu.Unlock()
+
+			for _, id := range ids {
+				 
+				m.announceOnce(ctx, id)
+			}
+		}
+	}
+}
+
+func createTask(d *dhtnode.Node, ns string, id string, image string, cmd []string) error {
 	now := time.Now().UTC()
 
 	meta := task.TaskMeta{ID: id, Image: image, Command: cmd, CreatedAt: now}
@@ -26,7 +98,7 @@ func createTask(d *dhtnode.Node, id string, image string, cmd []string) error {
 	}
 
 	// index CAS
-	return d.PutJSONCAS(task.IndexKey, func(prev []byte) (bool, []byte, error) {
+	return d.PutJSONCAS(task.KeyIndex(ns), func(prev []byte) (bool, []byte, error) { // 
 		var idx task.TaskIndex
 		if len(prev) > 0 {
 			_ = json.Unmarshal(prev, &idx)
@@ -48,13 +120,13 @@ func createTask(d *dhtnode.Node, id string, image string, cmd []string) error {
 	})
 }
 
-// 중앙은 주기 스냅샷만 수행 (보조자)
-func snapshotLoop(d *dhtnode.Node) {
+func snapshotLoop(d *dhtnode.Node, ns string) {
 	t := time.NewTicker(10 * time.Second)
 	defer t.Stop()
 	for range t.C {
 		var idx task.TaskIndex
-		if err := d.GetJSON(task.IndexKey, &idx, 3*time.Second); err != nil {
+		// TODO: 프로덕션에서 사용할 경우 네임스페이스 인식 기능도 필요합니다
+		if err := d.GetJSON(task.KeyIndex(ns), &idx, 3*time.Second); err != nil {
 			continue
 		}
 		for _, id := range idx.IDs {
@@ -90,17 +162,52 @@ func main() {
 		}
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	node, err := dhtnode.NewNode(ctx, *ns, boots)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer node.Close()
 
-	fmt.Println("[control] PeerID:", node.Host.ID().String())
-	for _, a := range node.Multiaddrs() {
-		fmt.Println("[control] addr:", a)
-	}
+	
+   fmt.Println("[control] PeerID:", node.Host.ID().String())
+    for _, a := range node.Multiaddrs() {
+        fmt.Println("[control] addr:", a)
+    }
+
+    //추가: 트스트랩 피어가 비어 있으면 스스로 루트 노드로 동작
+    if len(boots) == 0 {
+        log.Println("[control] no bootstrap peers provided; acting as DHT seed node")
+    } else {
+        // 여러 피어를 부트스트랩에 연결
+        for _, maddr := range boots {
+            if err := node.Connect(ctx, maddr); err != nil {
+                log.Printf("[control] bootstrap connect failed %s: %v", maddr, err)
+            } else {
+                log.Printf("[control] connected bootstrap peer %s", maddr)
+            }
+        }
+    }
+
+
+	// AnnounceManager 생성 및 실행
+	const ttl = 30 * time.Second
+	const interval = ttl / 2
+	mgr := NewAnnounceManager(node, *ns, ttl, interval) 
+	go mgr.Run(ctx)
+
+	// HTTP 서버 기동 
+	mux := mountHTTP(node, *ns, mgr.Enqueue)
+	srv := &http.Server{Addr: ":8080", Handler: mux} 
+	go func() {
+		fmt.Println("[control] http listening :8080")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+	defer srv.Shutdown(ctx) 
 
 	// 작업 생성
 	if *createStr != "" {
@@ -117,7 +224,7 @@ func main() {
 			if id == "" {
 				continue
 			}
-			if err := createTask(node, id, *image, cmd); err != nil {
+			if err := createTask(node, *ns, id, *image, cmd); err != nil { 
 				log.Println("[control] create error:", err)
 			} else {
 				log.Println("[control] created task:", id)
@@ -126,5 +233,5 @@ func main() {
 	}
 
 	// 스냅샷 루프
-	snapshotLoop(node)
+	snapshotLoop(node, *ns)
 }
