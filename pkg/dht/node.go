@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/libp2p/go-libp2p"
+	"net"
+	"strings"
+    libp2p "github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	record "github.com/libp2p/go-libp2p-record"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	protocol "github.com/libp2p/go-libp2p/core/protocol"
-	"github.com/multiformats/go-multiaddr"
+	ma "github.com/multiformats/go-multiaddr"
 	"math/rand"
 	"time"
 )
@@ -38,12 +40,62 @@ func NewNode(parent context.Context, namespace string, bootstrapAddrs []string) 
 		err    error
 	)
 
-	// libp2p.Routing에 함수를 직접 전달합니다. 타입 캐스팅이 필요 없습니다.
-	h, err = libp2p.New()
-	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("libp2p new: %w", err)
-	}
+
+// --- 멀티 인터페이스 IP 탐지 및 광고 ---
+ips := detectIPv4Addrs()
+fmt.Printf("[dht] detected IPs: %v\n", ips)
+
+var opts []libp2p.Option
+opts = append(opts,
+    libp2p.ListenAddrStrings(
+        "/ip4/0.0.0.0/tcp/0",
+        "/ip4/0.0.0.0/udp/0/quic-v1",
+    ),
+)
+
+opts = append(opts, libp2p.AddrsFactory(func(in []ma.Multiaddr) []ma.Multiaddr {
+    out := make([]ma.Multiaddr, 0, len(in)*len(ips))
+    for _, a := range in {
+        // 1) TCP인지 확인
+        if p, err := a.ValueForProtocol(ma.P_TCP); err == nil {
+            // p는 문자열 포트 번호
+            for _, ip := range ips {
+                if m, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/%s", ip, p)); err == nil {
+                    out = append(out, m)
+                }
+            }
+            continue
+        }
+
+        // 2) UDP(+QUIC)인지 확인
+        if p, err := a.ValueForProtocol(ma.P_UDP); err == nil {
+            isQuicV1 := strings.Contains(a.String(), "/quic-v1")
+            for _, ip := range ips {
+                var s string
+                if isQuicV1 {
+                    s = fmt.Sprintf("/ip4/%s/udp/%s/quic-v1", ip, p)
+                } else {
+                    s = fmt.Sprintf("/ip4/%s/udp/%s", ip, p)
+                }
+                if m, err := ma.NewMultiaddr(s); err == nil {
+                    out = append(out, m)
+                }
+            }
+            continue
+        }
+        // 그 외 프로토콜은 그대로(필요시 생략 가능)
+    }
+    return out
+}))
+
+h, err = libp2p.New(opts...)
+if err != nil {
+    cancel()
+    return nil, fmt.Errorf("libp2p new: %w", err)
+}
+
+
+
 mode := dht.Mode(dht.ModeAuto)
 if len(bootstrapAddrs) == 0 {
     mode = dht.Mode(dht.ModeServer)
@@ -72,7 +124,7 @@ if len(bootstrapAddrs) == 0 {
 
 	if len(bootstrapAddrs) > 0 {
 		for _, s := range bootstrapAddrs {
-			m, err := multiaddr.NewMultiaddr(s)
+			m, err := ma.NewMultiaddr(s)
 			if err != nil {
 				fmt.Printf("[bootstrap] bad multiaddr: %q: %v\n", s, err)
 				continue
@@ -116,6 +168,74 @@ if len(bootstrapAddrs) == 0 {
 	}
 	return n, nil
 }
+
+func detectTailnetIPv4() string {
+  ifaces, _ := net.Interfaces()
+    for _, iface := range ifaces {
+        if iface.Name == "tailscale0" && (iface.Flags&net.FlagUp) != 0 {
+            addrs, _ := iface.Addrs()
+            for _, a := range addrs {
+                if ipnet, ok := a.(*net.IPNet); ok {
+                    ip := ipnet.IP.To4()
+                    if ip == nil {
+                        continue
+                    }
+                    if ip[0] == 100 && ip[1] >= 64 && ip[1] <= 127 {
+                        return ip.String()
+                    }
+                }
+            }
+        }
+    }
+    // tailscale0 못 찾으면 전체 인터페이스에서 100.64/10 검색
+    ifaces, _ = net.Interfaces()
+    for _, iface := range ifaces {
+        if (iface.Flags & net.FlagUp) == 0 {
+            continue
+        }
+        addrs, _ := iface.Addrs()
+        for _, a := range addrs {
+            if ipnet, ok := a.(*net.IPNet); ok {
+                ip := ipnet.IP.To4()
+                if ip == nil {
+                    continue
+                }
+                if ip[0] == 100 && ip[1] >= 64 && ip[1] <= 127 {
+                    return ip.String()
+                }
+            }
+        }
+    }
+    return ""
+}
+
+func detectIPv4Addrs() []string {
+    var out []string
+    ifaces, _ := net.Interfaces()
+    for _, iface := range ifaces {
+        if (iface.Flags & net.FlagUp) == 0 {
+            continue
+        }
+        addrs, _ := iface.Addrs()
+        for _, a := range addrs {
+            if ipnet, ok := a.(*net.IPNet); ok {
+                ip := ipnet.IP.To4()
+                if ip == nil {
+                    continue
+                }
+                // tailscale(100.64/10) 또는 사설망만 포함
+                if (ip[0] == 100 && ip[1] >= 64 && ip[1] <= 127) || ip.IsPrivate() {
+                    out = append(out, ip.String())
+                }
+            }
+        }
+    }
+    // 항상 루프백도 추가
+    out = append(out, "127.0.0.1")
+    return out
+}
+
+
 func (n *Node) Context() context.Context { return n.ctx }
 func (n *Node) Close()                   { n.cancel(); _ = n.Host.Close() }
 
@@ -152,7 +272,8 @@ func (n *Node) Multiaddrs() []string {
 	var out []string
 	pid := n.Host.ID()
 	for _, a := range n.Host.Addrs() {
-		out = append(out, a.Encapsulate(multiaddr.StringCast("/p2p/"+pid.String())).String())
+		out = append(out, a.Encapsulate(ma.StringCast("/p2p/"+pid.String())).String())
+     
 	}
 	return out
 }
@@ -233,7 +354,7 @@ func (n *Node) PutJSONCAS(key string, check func(prev []byte) (ok bool, next []b
 	return lastErr
 }
 func (n *Node) Connect(ctx context.Context, maddrStr string) error {
-	m, err := multiaddr.NewMultiaddr(maddrStr)
+	m, err := ma.NewMultiaddr(maddrStr)
 	if err != nil {
 		return fmt.Errorf("bad multiaddr %q: %w", maddrStr, err)
 	}
