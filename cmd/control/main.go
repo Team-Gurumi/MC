@@ -125,7 +125,8 @@ func snapshotLoop(d *dhtnode.Node, ns string) {
 	defer t.Stop()
 	for range t.C {
 		var idx task.TaskIndex
-		// TODO: 프로덕션에서 사용할 경우 네임스페이스 인식 기능도 필요합니다
+		// TODO: 프로덕션에서 사용할 경우 네임스페이스 인식 기능도 필요
+		
 		if err := d.GetJSON(task.KeyIndex(ns), &idx, 3*time.Second); err != nil {
 			continue
 		}
@@ -149,6 +150,7 @@ func main() {
 		createStr = flag.String("create", "", "comma-separated task IDs to create")
 		image     = flag.String("image", "alpine", "container image")
 		cmdStr    = flag.String("cmd", "echo,hello", "comma-separated command")
+		httpPort  = flag.Int("http-port", 8080, "HTTP listening port") 
 	)
 	flag.Parse()
 
@@ -200,13 +202,14 @@ func main() {
 
 	// HTTP 서버 기동 
 	mux := mountHTTP(node, *ns, mgr.Enqueue)
-	srv := &http.Server{Addr: ":8080", Handler: mux} 
-	go func() {
-		fmt.Println("[control] http listening :8080")
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal(err)
-		}
-	}()
+addr := fmt.Sprintf(":%d", *httpPort)
+srv := &http.Server{Addr: addr, Handler: mux}
+go func() {
+    fmt.Printf("[control] http listening %s\n", addr)
+    if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+        log.Fatal(err)
+    }
+}()
 	defer srv.Shutdown(ctx) 
 
 	// 작업 생성
