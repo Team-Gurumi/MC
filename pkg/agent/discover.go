@@ -77,10 +77,12 @@ func (dv *Discoverer) handleJob(ctx context.Context, id string, onCandidate func
 	if id == "" {
 		return
 	}
-	if _, ok := dv.seen.Load(id); ok {
-		return // 디바운스
-	}
-
+  if v, ok := dv.seen.Load(id); ok {
+        if t, ok2 := v.(time.Time); ok2 && time.Since(t) < 10*time.Second {
+            return
+        }
+        // stale → 재시도 허용
+    }
 	//TASK_AD 참고 — rendezvous 필터 등
 	_, _ = dv.readTaskAd(ctx, id)
 
@@ -98,7 +100,7 @@ func (dv *Discoverer) handleJob(ctx context.Context, id string, onCandidate func
        onCandidate(id, providers)
    }
 	
-	dv.seen.Store(id, time.Now().UTC())
+	dv.seen.Store(id, time.Now())
 }
 
 func (dv *Discoverer) Run(ctx context.Context, listIDs func() []string, onCandidate func(jobID string, providers []task.Provider)) {

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Fault-tolerance benchmark (patched)
-# - Adds manifest POST per task (noop by default or PROVIDERS_JSON override)
-# - Wires DHT bootstrap from control.log to agents
-# - Shorter default timings for fast iteration
+# 내결함성 벤치마크 (패치됨)
+# - 각 작업마다 Manifest POST 추가 (기본적으로는 아무 동작 안 함, PROVIDERS_JSON으로 재정의 가능)
+# - control.log에서 DHT 부트스트랩 정보를 에이전트로 연결
+# - 빠른 반복 테스트를 위해 기본 타이밍 단축
 
-# -------- Tunables (env) --------
+# -------- (환경 변수로) 조정 가능한 값들 --------
 NS="${NS:-mc}"
 START_PORT="${CONTROL_PORT:-8080}"
 CONTROL_TOKEN="${CONTROL_TOKEN:-dev}"
@@ -14,28 +14,28 @@ DISABLE_AUTH="${MC_DISABLE_AUTH:-0}"
 
 AGENTS="${AGENTS:-30}"
 TASKS="${TASKS:-200}"
-HB_SEC="${HB_SEC:-5}"          # agent reads if supported
-TTL_SEC="${TTL_SEC:-15}"       # agent reads if supported
+HB_SEC="${HB_SEC:-5}"          # 에이전트가 지원하는 경우 읽음
+TTL_SEC="${TTL_SEC:-15}"       # 에이전트가 지원하는 경우 읽음
 KILL_PERCENT="${KILL_PERCENT:-10}"
-RUNTIME_BEFORE_KILL="${RUNTIME_BEFORE_KILL:-60}"     # ↓ shorter
-POST_KILL_OBSERVE="${POST_KILL_OBSERVE:-60}"         # ↓ shorter
+RUNTIME_BEFORE_KILL="${RUNTIME_BEFORE_KILL:-60}"     # ↓ 단축됨
+POST_KILL_OBSERVE="${POST_KILL_OBSERVE:-60}"         # ↓ 단축됨
 
-# Container policy
+# 컨테이너 정책
 DOCKER_IMAGE="${DOCKER_IMAGE:-alpine:latest}"
 AGENT_FLAGS="${AGENT_FLAGS:-}"
 
-# Manifest providers JSON (optional). When empty, use noop (no input needed).
-# Example:
+# Manifest providers JSON (선택 사항). 비어 있으면 입력 없이 아무 동작 안 함.
+# 예시:
 #   export PROVIDERS_JSON='{"root_cid":"demo.txt","providers":[{"peer_id":"12D3...","addrs":["/ip4/127.0.0.1/tcp/34567/p2p/12D3..."]}]}'
 PROVIDERS_JSON="${PROVIDERS_JSON:-}"
 
-# -------- Artifacts --------
+# -------- 결과물 경로 --------
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT="bench_artifacts/${TS}"
 LOGDIR="${OUT}/logs"
 mkdir -p "${LOGDIR}" "${OUT}/results"
 
-# -------- Docker preflight --------
+# -------- 도커 사전 확인 --------
 if ! command -v docker >/dev/null 2>&1; then
   echo "[FATAL] docker not found in PATH"; exit 1
 fi
@@ -46,7 +46,7 @@ fi
 echo "==> Docker image pre-pull: ${DOCKER_IMAGE}"
 docker pull "${DOCKER_IMAGE}" >/dev/null || { echo "[FATAL] failed to pull ${DOCKER_IMAGE}"; exit 1; }
 
-# -------- Helpers --------
+# -------- 헬퍼 함수 --------
 pick_free_port() {
   local p=$1
   while :; do
@@ -63,7 +63,7 @@ http_ready() {
   curl -fsS "${base}/" >/dev/null 2>&1 || curl -fsS "${base}/api/health" >/dev/null 2>&1
 }
 
-# -------- Control start --------
+# -------- 컨트롤러 시작 --------
 PORT="$(pick_free_port "$START_PORT")"
 CONTROL_URL="http://127.0.0.1:${PORT}"
 
@@ -98,21 +98,21 @@ echo "==> Starting control @ ${CONTROL_URL}"
     > "${LOGDIR}/control.log" 2>&1 ) &
 CONTROL_PID=$!
 
-# Wait for control HTTP ready
+# 컨트롤러 HTTP 준비될 때까지 대기
 for i in {1..50}; do
   if http_ready "${CONTROL_URL}"; then break; fi
   sleep 0.1
 done
 
-# ★★★ PATCHED SECTION: Extract bootstrap multiaddress (prioritize loopback/tcp) ★★★
+# ★★★ 패치된 섹션: 부트스트랩 멀티주소 추출 (루프백/tcp 우선) ★★★
 BOOTSTRAP=""
-# Try to get 127.0.0.1 address first
+# 127.0.0.1 주소를 먼저 시도
 BOOTSTRAP="$(awk '/addr: .*\/ip4\/127\.0\.0\.1\/tcp\/[^ ]*\/p2p\//{print $NF; exit}' "${LOGDIR}/control.log" 2>/dev/null || true)"
-# Fallback to the first available P2P address if not found
+# 찾지 못하면 사용 가능한 첫 번째 P2P 주소로 대체
 if [ -z "${BOOTSTRAP}" ]; then
   BOOTSTRAP="$(grep '/p2p/' "${LOGDIR}/control.log" | sed -n 's/.*addr: \([^ ]*\).*/\1/p' | head -n1)"
 fi
-# Exit if no bootstrap address could be found
+# 부트스트랩 주소를 찾을 수 없으면 종료
 if [ -z "${BOOTSTRAP}" ]; then
   echo "[FATAL] Failed to extract bootstrap multiaddr from ${LOGDIR}/control.log" >&2
   kill "${CONTROL_PID}" 2>/dev/null
@@ -120,9 +120,9 @@ if [ -z "${BOOTSTRAP}" ]; then
 fi
 echo "==> Using bootstrap: ${BOOTSTRAP}"
 echo "BOOTSTRAP=${BOOTSTRAP}" >> "${OUT}/config.txt"
-# ★★★ END PATCHED SECTION ★★★
+# ★★★ 패치된 섹션 끝 ★★★
 
-# -------- Agents spawn --------
+# -------- 에이전트 생성 --------
 echo "==> Spawning ${AGENTS} agents"
 : > "${OUT}/agents.pids"
 for i in $(seq 1 "${AGENTS}"); do
@@ -159,7 +159,7 @@ env PATH="${PATH}" HOME="${HOME}" \
 done
 echo "agents started: $(wc -l < "${OUT}/agents.pids")"
 
-# -------- Submit tasks --------
+# -------- 작업 제출 --------
 echo "==> Submitting ${TASKS} tasks"
 AUTH_HEADER=()
 [[ "${DISABLE_AUTH}" != "1" ]] && AUTH_HEADER=(-H "Authorization: Bearer ${CONTROL_TOKEN}")
@@ -169,12 +169,12 @@ TASKS_FILE="${OUT}/tasks.jsonl"
 
 for j in $(seq 1 "${TASKS}"); do
   JOB="job-${TS}-${j}"
-body="{\"id\":\"${JOB}\",\"image\":\"${DOCKER_IMAGE}\",\"command\":[\"/bin/sh\",\"-lc\",\"echo agent:$RANDOM && sleep 60 && echo done\"]}"
+body="{\"id\":\"${JOB}\",\"image\":\"${DOCKER_IMAGE}\",\"command\":[\"/bin/sh\",\"-lc\",\"echo agent:$RANDOM && sleep 10 && echo done\"]}"
   http_code="$(curl -sS -o /tmp/resp.$$ -w '%{http_code}' -X POST "${CONTROL_URL}/api/tasks" \
                  -H 'Content-Type: application/json' "${AUTH_HEADER[@]}" -d "${body}" || true)"
   cat /tmp/resp.$$ >> "${TASKS_FILE}"; echo >> "${TASKS_FILE}"
 
-  # Manifest post (noop or user-provided providers)
+  # Manifest 전송 (noop 또는 사용자가 제공한 providers)
   if [[ -n "${PROVIDERS_JSON}" ]]; then
     mbody="${PROVIDERS_JSON}"
   else
@@ -190,7 +190,7 @@ body="{\"id\":\"${JOB}\",\"image\":\"${DOCKER_IMAGE}\",\"command\":[\"/bin/sh\",
   if (( j % 100 == 0 )); then echo "  submitted: ${j}"; fi
 done
 
-# -------- Induce failure --------
+# -------- 장애 유발 --------
 echo "==> Sleeping ${RUNTIME_BEFORE_KILL}s"
 sleep "${RUNTIME_BEFORE_KILL}"
 
@@ -206,14 +206,14 @@ done < "${OUT}/killed_agents.txt"
 echo "==> Observing ${POST_KILL_OBSERVE}s"
 sleep "${POST_KILL_OBSERVE}"
 
-# -------- Stop remaining agents --------
+# -------- 남은 에이전트 중지 --------
 echo "==> Stopping remaining agents"
 while read -r pid; do
   if kill -0 "${pid}" 2>/dev/null; then kill "${pid}" 2>/dev/null || true; fi
 done < "${OUT}/agents.pids"
 sleep 1
 
-# -------- Analyze (if available) --------
+# -------- 분석 (가능한 경우) --------
 if [[ -x "$(dirname "$0")/analyze_metrics.py" ]]; then
   echo "==> Running metrics analyzer"
   python3 "$(dirname "$0")/analyze_metrics.py" "${OUT}" | tee "${OUT}/results/report.md"
