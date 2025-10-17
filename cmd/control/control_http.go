@@ -131,7 +131,7 @@ func finishHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 		}
 		now := time.Now().UTC()
 		st.UpdatedAt = now
-		
+		st.Version++
 		st.FinishedAt = &now
 
 		 if st.StartedAt != nil { // st.StartedAt이 포인터이므로 nil인지 확인
@@ -155,6 +155,7 @@ func finishHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 			_ = d.PutJSON(fmt.Sprintf("task/%s/artifacts", id), in.Artifacts)
 		}
 		_ = d.PutJSON(task.KeyState(id), st)
+_ = d.DelJSON(task.KeyLease(id))
 
 		w.WriteHeader(http.StatusNoContent)
 	}

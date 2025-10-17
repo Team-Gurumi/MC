@@ -188,64 +188,6 @@ func snapshotLoop(d *dhtnode.Node, ns string) {
 
 func main() {
 
-// 만료된 lease를 재큐잉하고 다시 광고하는 루프
-func startLeaseReaper(ctx context.Context, d *dhtnode.Node, ns string, sweepEvery time.Duration, reannounce func(string)) {
-    go func() {
-        tk := time.NewTicker(sweepEvery)
-        defer tk.Stop()
-        for {
-            select {
-            case <-ctx.Done():
-                return
-            case <-tk.C:
-                // 인덱스 조회
-                var idx task.TaskIndex
-                if err := d.GetJSON(task.KeyIndex(ns), &idx, 2*time.Second); err != nil {
-                    continue
-                }
-                now := time.Now().UTC()
-                for _, id := range idx.IDs {
-                    // 상태 읽기
-                    var st task.TaskState
-                    if err := d.GetJSON(task.KeyState(id), &st, 2*time.Second); err != nil {
-                        continue
-                    }
-                    if st.Status != task.StatusAssigned {
-                        continue
-                    }
-                    // 리스 확인
-                    var l task.ClaimRecord
-                    if err := d.GetJSON(task.KeyLease(id), &l, 2*time.Second); err != nil {
-                        continue
-                    }
-                    if l.Expires.After(now) {
-                        continue
-                    }
-                    // ★ 리스 만료 → 재큐잉
-                    st.Status = task.StatusQueued
-                    st.AssignedTo = ""
-                    st.UpdatedAt = now
-                    st.Version++
-                    _ = d.PutJSON(task.KeyState(id), st)
-
-                    // ★ 미러 TTL 갱신(발견 가능)
-                    var man task.Manifest
-                    if err := d.GetJSON(task.KeyManifest(id), &man, 2*time.Second); err == nil {
-                        _ = d.PutJSON("p2p/"+id+"/manifest", struct {
-                            Providers []task.Provider `json:"providers"`
-                            Exp       time.Time       `json:"exp"`
-                        }{Providers: man.Providers, Exp: now.Add(2 * time.Minute)})
-                    }
-                    // ★ 재광고 큐잉
-                    if reannounce != nil {
-                        reannounce(id)
-                    }
-                    log.Printf("[requeue] lease expired → queued: %s", id)
-                }
-            }
-        }
-    }()
-}
 
 	var (
 		ns        = flag.String("ns", "mc", "DHT namespace prefix")
@@ -301,7 +243,6 @@ func startLeaseReaper(ctx context.Context, d *dhtnode.Node, ns string, sweepEver
 	const ttl = 30 * time.Second
 	const interval = ttl / 2
 	mgr := NewAnnounceManager(node, *ns, 30*time.Second /*ttl*/, 3*time.Second /*interval*/)
-go mgr.Run(ctx)
 
 go mgr.Run(ctx)
 go requeueLoop(ctx, node, *ns, mgr) // 리스 만료 감시 루프
