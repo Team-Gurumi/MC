@@ -63,18 +63,6 @@ http_ready() {
   curl -fsS "${base}/" >/dev/null 2>&1 || curl -fsS "${base}/api/health" >/dev/null 2>&1
 }
 
-select_bootstrap() {
-  # Prefer 127.0.0.1 address, else first addr line
-  local log="${LOGDIR}/control.log"
-  local pick=""
-  if grep -qE "addr: /ip4/127\.0\.0\.1/.*/p2p/" "$log"; then
-    pick="$(grep -m1 -E 'addr: /ip4/127\.0\.0\.1/.*/p2p/' "$log" | sed -E 's/.*addr: ([^ ]+).*/\1/')"
-  else
-    pick="$(grep -m1 -E 'addr: .*?/p2p/' "$log" | sed -E 's/.*addr: ([^ ]+).*/\1/')"
-  fi
-  echo "$pick"
-}
-
 # -------- Control start --------
 PORT="$(pick_free_port "$START_PORT")"
 CONTROL_URL="http://127.0.0.1:${PORT}"
@@ -106,7 +94,7 @@ fi
 
 echo "==> Starting control @ ${CONTROL_URL}"
 ( exec env -i PATH="$PATH" HOME="$HOME" "${CONTROL_ENV[@]}" \
-    go run ./cmd/control -ns "${NS}" -http-port "${PORT}" \
+    ./control -ns "${NS}" -http-port "${PORT}" \
     > "${LOGDIR}/control.log" 2>&1 ) &
 CONTROL_PID=$!
 
@@ -116,15 +104,23 @@ for i in {1..50}; do
   sleep 0.1
 done
 
-# Extract bootstrap from control log
-sleep 0.5
-BOOTSTRAP="$(select_bootstrap || true)"
-if [[ -z "${BOOTSTRAP}" ]]; then
-  echo "[WARN] could not detect bootstrap from control.log; agents will start without it"
-else
-  echo "BOOTSTRAP=${BOOTSTRAP}" >> "${OUT}/config.txt"
-  echo "==> Using bootstrap: ${BOOTSTRAP}"
+# ★★★ PATCHED SECTION: Extract bootstrap multiaddress (prioritize loopback/tcp) ★★★
+BOOTSTRAP=""
+# Try to get 127.0.0.1 address first
+BOOTSTRAP="$(awk '/addr: .*\/ip4\/127\.0\.0\.1\/tcp\/[^ ]*\/p2p\//{print $NF; exit}' "${LOGDIR}/control.log" 2>/dev/null || true)"
+# Fallback to the first available P2P address if not found
+if [ -z "${BOOTSTRAP}" ]; then
+  BOOTSTRAP="$(grep '/p2p/' "${LOGDIR}/control.log" | sed -n 's/.*addr: \([^ ]*\).*/\1/p' | head -n1)"
 fi
+# Exit if no bootstrap address could be found
+if [ -z "${BOOTSTRAP}" ]; then
+  echo "[FATAL] Failed to extract bootstrap multiaddr from ${LOGDIR}/control.log" >&2
+  kill "${CONTROL_PID}" 2>/dev/null
+  exit 1
+fi
+echo "==> Using bootstrap: ${BOOTSTRAP}"
+echo "BOOTSTRAP=${BOOTSTRAP}" >> "${OUT}/config.txt"
+# ★★★ END PATCHED SECTION ★★★
 
 # -------- Agents spawn --------
 echo "==> Spawning ${AGENTS} agents"
@@ -150,11 +146,11 @@ env PATH="${PATH}" HOME="${HOME}" \
         DOCKER_HOST="${DOCKER_HOST}" \
         MC_NS="${NS}" \
         "${EXTRA_ENV[@]}" \
-        go run ./cmd/agent \
+        ./agent \
           -ns "${NS}" \
           -control-url "${CONTROL_URL}" \
           -auth-token "${CONTROL_TOKEN}" \
-          ${BOOTSTRAP:+-bootstrap "${BOOTSTRAP}"} \
+          -bootstrap "${BOOTSTRAP}" \
           ${AGENT_FLAGS} \
           >> "${LOG}" 2>&1
   ) &
@@ -227,4 +223,3 @@ else
 fi
 
 echo "==> DONE. See ${OUT}"
-

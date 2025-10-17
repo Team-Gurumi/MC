@@ -87,6 +87,14 @@ type finishIn struct {
 	Error     string         `json:"error,omitempty"`
 }
 
+func putManifestMirror(node *dhtnode.Node, id string, providers []task.Provider, ttl time.Duration) error {
+    mir := manifestMirror{
+        Providers: providers,
+        Exp:       time.Now().UTC().Add(ttl),
+    }
+    return node.PutJSON(keyP2PManifestMirror(id), mir)
+}
+
 func finishHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireAuth(r) {
@@ -171,7 +179,10 @@ type taskAd struct {
 	Exp       time.Time `json:"exp"`
 	Sig       string    `json:"sig,omitempty"`
 }
-
+type manifestMirror struct {
+    Providers []task.Provider `json:"providers"`
+    Exp       time.Time       `json:"exp"`
+}
 // p2p/<id>/manifest 미러: P2P 좌표만 짧게
 type manifestAd struct {
 	RootCID    string        `json:"root_cid"`
@@ -434,11 +445,24 @@ func manifestHandler(d *dhtnode.Node, enqueue func(string)) http.HandlerFunc {
 			http.Error(w, "store error: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-
+   ttl := 2 * time.Minute
+   mir := manifestMirror{
+        Providers: man.Providers,
+       Exp:       time.Now().UTC().Add(ttl),
+   }
+    if err := d.PutJSON(keyP2PManifestMirror(id), mir); err != nil {
+        http.Error(w, "mirror store error: "+err.Error(), http.StatusInternalServerError)
+       return
+   }
 		enqueue(id)
 
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+ w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    _, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 // ===== GET /api/tasks/{id}/logs =====
@@ -672,7 +696,8 @@ func validateAgentToken(token, taskID string) bool {
 
 func mountHTTP(d *dhtnode.Node, ns string, enqueue func(string)) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.Handle("/api/tasks", createTaskHandler(d, ns))
+mux.HandleFunc("/api/health", healthHandler)
+mux.Handle("/api/tasks", createTaskHandler(d, ns))
 	mux.Handle("/api/tasks/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		if r.Method == http.MethodPost {
@@ -759,14 +784,13 @@ func announceAds(ctx context.Context, d *dhtnode.Node, ns, id string, man *task.
 		// log.Printf("[ad] task_ad put err: %v", err)
 	}
 
-	m := manifestAd{
-		RootCID:    man.RootCID,
-		Providers:  man.Providers,
-		Rendezvous: man.Rendezvous,
-		Transports: man.Transports,
-		Exp:        exp,
-	}
-	if err := d.PutJSON(keyP2PManifestMirror(id), m); err != nil {
+	
+	m := manifestMirror{
+      Providers: man.Providers,
+      Exp:       exp,
+  }
+  if err := d.PutJSON(keyP2PManifestMirror(id), m); err != nil {
+	
 		// log.Printf("[ad] p2p manifest mirror put err: %v", err)
 	}
 }

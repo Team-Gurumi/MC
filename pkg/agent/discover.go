@@ -81,19 +81,23 @@ func (dv *Discoverer) handleJob(ctx context.Context, id string, onCandidate func
 		return // 디바운스
 	}
 
-	// (선택) TASK_AD 참고 — rendezvous 필터 등
+	//TASK_AD 참고 — rendezvous 필터 등
 	_, _ = dv.readTaskAd(ctx, id)
 
-	m, err := dv.readManifestMirror(ctx, id)
-	if err != nil || len(m.Providers) == 0 {
-		return
-	}
-	providers := filterProviders(m.Providers)
-	if len(providers) == 0 {
-		return
-	}
-
-	onCandidate(id, providers)
+	
+	 m, err := dv.readManifestMirror(ctx, id)
+  if err != nil {
+       // 매니페스트 미러가 아직 없으면 스킵 (광고/미러가 전파되면 다음 틱에 잡힘)
+       return
+   }
+   providers := filterProviders(m.Providers)
+   //provider가 없거나 모두 필터링되어도 '입력 불필요 잡'일 수 있으니 후보로 넘긴다
+   if len(providers) == 0 {
+       onCandidate(id, nil)
+   } else {
+       onCandidate(id, providers)
+   }
+	
 	dv.seen.Store(id, time.Now().UTC())
 }
 

@@ -199,7 +199,7 @@ func main() {
 	// AnnounceManager 생성 및 실행
 	const ttl = 30 * time.Second
 	const interval = ttl / 2
-	mgr := NewAnnounceManager(node, *ns, 3*time.Second /*ttl*/, 3*time.Second /*interval*/)
+	mgr := NewAnnounceManager(node, *ns, 30*time.Second /*ttl*/, 3*time.Second /*interval*/)
 go mgr.Run(ctx)
 
 
