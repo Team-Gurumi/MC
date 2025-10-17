@@ -121,7 +121,7 @@ func createTask(d *dhtnode.Node, ns string, id string, image string, cmd []strin
 		return true, next, nil
 	})
 }
-// 리스 만료 감시 루프: assigned인데 lease 만료된 작업을 queued로 되돌림
+// Corrected Code
 func requeueLoop(ctx context.Context, d *dhtnode.Node, ns string, mgr *AnnounceManager) {
     ticker := time.NewTicker(2 * time.Second) // 2초마다 검사
     defer ticker.Stop()
@@ -141,28 +141,33 @@ func requeueLoop(ctx context.Context, d *dhtnode.Node, ns string, mgr *AnnounceM
                 if err := d.GetJSON(task.KeyState(id), &st, 2*time.Second); err != nil {
                     continue
                 }
-                // assigned 상태인데 만료된 경우
+               
+                // The '+' character has been removed from the line below
                 if st.Status == task.StatusAssigned {
                     var l task.ClaimRecord
-                    if err := d.GetJSON(task.KeyLease(id), &l, 2*time.Second); err != nil {
+                    err := d.GetJSON(task.KeyLease(id), &l, 2*time.Second)
+
+                    // ★ 만료 판단: (1) 읽기 에러(리스 없음) OR (2) owner 없음 OR (3) 만료시간 없음 OR (4) now >= l.Expires
+                    expiredOrMissing := err != nil || l.Owner == "" || l.Expires.IsZero() || !l.Expires.After(now)
+                    if !expiredOrMissing {
                         continue
                     }
-                    if l.Expires.Before(now) {
-                        st.Status = task.StatusQueued
-                        st.AssignedTo = ""
-                        st.UpdatedAt = now
-                        st.Version++
-                        _ = d.PutJSON(task.KeyState(id), st)
-                        // 재광고 (다른 에이전트가 다시 발견할 수 있게)
-                        mgr.Enqueue(id)
-                        log.Printf("[requeue] expired lease -> queued: %s", id)
-                    }
+
+                    // 재큐잉
+                    st.Status = task.StatusQueued
+                    st.AssignedTo = ""
+                    st.UpdatedAt = now
+                    st.Version++
+                    _ = d.PutJSON(task.KeyState(id), st)
+
+                    // 발견 재개(미러 TTL도 announce에서 갱신됨)
+                    mgr.Enqueue(id)
+                    log.Printf("[requeue] lease missing/expired -> queued: %s", id)
                 }
             }
         }
     }
 }
-
 func snapshotLoop(d *dhtnode.Node, ns string) {
 	t := time.NewTicker(10 * time.Second)
 	defer t.Stop()
