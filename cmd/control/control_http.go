@@ -389,10 +389,13 @@ func manifestHandler(d *dhtnode.Node, enqueue func(string)) http.HandlerFunc {
 			http.Error(w, "root_cid required", http.StatusBadRequest)
 			return
 		}
+		/*
+		// providers가 비어 있어도 허용하도록 주석 처리
 		if len(in.Providers) == 0 {
 			http.Error(w, "providers required (seeders deprecated)", http.StatusBadRequest)
 			return
 		}
+		*/
 		if err := validateTransports(in.Transports); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

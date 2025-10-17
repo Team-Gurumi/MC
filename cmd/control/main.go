@@ -40,15 +40,17 @@ func (m *AnnounceManager) Enqueue(id string) {
 	m.mu.Lock()
 	m.dirty[id] = struct{}{}
 	m.mu.Unlock()
+	
+	   go m.announceOnce(context.Background(), id)
 }
 
 
 func (m *AnnounceManager) announceOnce(ctx context.Context, id string) {
 	
 	var man task.Manifest
-	if err := m.d.GetJSON(task.KeyManifest(id), &man, 2*time.Second); err != nil || man.RootCID == "" {
-		return
-	}
+	  if err := m.d.GetJSON(task.KeyManifest(id), &man, 2*time.Second); err != nil || man.RootCID == "" {
+        return
+    }
 	announceAds(ctx, m.d, m.ns, id, &man, m.ttl)
 
 	m.mu.Lock() 
@@ -197,8 +199,9 @@ func main() {
 	// AnnounceManager 생성 및 실행
 	const ttl = 30 * time.Second
 	const interval = ttl / 2
-	mgr := NewAnnounceManager(node, *ns, ttl, interval) 
-	go mgr.Run(ctx)
+	mgr := NewAnnounceManager(node, *ns, 3*time.Second /*ttl*/, 3*time.Second /*interval*/)
+go mgr.Run(ctx)
+
 
 	// HTTP 서버 기동 
 	mux := mountHTTP(node, *ns, mgr.Enqueue)

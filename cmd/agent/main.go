@@ -108,36 +108,42 @@ func main() {
 		_ = os.MkdirAll(workDir, 0o755)
 
 		var meta task.TaskMeta
-		if err := d.GetJSON(task.KeyMeta(jobID), &meta, 3*time.Second); err != nil {
+		if err := d.GetJSON(task.KeyMeta(
+		jobID), &meta, 3*time.Second); err != nil {
 			_ = finish.Report(context.Background(), jobID, "failed",
 				map[string]any{"error_stage": "get_meta"}, "", nil, "get meta failed: "+err.Error())
 			cancelJob()
 			return
 		}
 		// 4) 입력 파일 준비 (매니페스트 로드 및 Fetch)
-		inputDir := filepath.Join(workDir, "input")
-		if err := os.MkdirAll(inputDir, 0o755); err != nil {
+inputDir := filepath.Join(workDir, "input")
+if err := os.MkdirAll(inputDir, 0o755); err != nil {
+	_ = finish.Report(context.Background(), jobID, "failed",
+		map[string]any{"error_stage": "create_input_dir"}, "", nil, "create input dir failed: "+err.Error())
+	cancelJob()
+	return
+}
+
+var man task.Manifest
+if err := d.GetJSON(task.KeyManifest(jobID), &man, 3*time.Second); err == nil && man.RootCID != "" {
+	// 입력이 명시적으로 '없음'이면 fetch 스킵
+	if strings.EqualFold(man.RootCID, "noop") || len(man.Providers) == 0 {
+		log.Printf("[agent] job=%s no input fetch (root_cid=%q providers=%d) -> skip", jobID, man.RootCID, len(man.Providers))
+	} else {
+		log.Printf("[agent] job=%s fetching input: %s", jobID, man.RootCID)
+		if _, err := agent.FetchAny(context.Background(), d, man.RootCID, man.Providers, inputDir); err != nil {
+			// Fetch 실패 시 종료 보고
 			_ = finish.Report(context.Background(), jobID, "failed",
-				map[string]any{"error_stage": "create_input_dir"}, "", nil, "create input dir failed: "+err.Error())
+				map[string]any{"error_stage": "fetch_input"}, "", nil, "fetch failed: "+err.Error())
 			cancelJob()
 			return
 		}
-
-		var man task.Manifest
-		if err := d.GetJSON(task.KeyManifest(jobID), &man, 3*time.Second); err == nil && man.RootCID != "" {
-			log.Printf("[agent] job=%s fetching input: %s", jobID, man.RootCID)
-			if _, err := agent.FetchAny(context.Background(), d, man.RootCID, man.Providers, inputDir); err != nil {
-				// Fetch 실패 시 종료 보고
-				_ = finish.Report(context.Background(), jobID, "failed",
-					map[string]any{"error_stage": "fetch_input"}, "", nil, "fetch failed: "+err.Error())
-				cancelJob()
-				return
-			}
-			log.Printf("[agent] job=%s fetch complete: %s -> %s", jobID, man.RootCID, inputDir)
-		} else {
-			// 매니페스트가 없으면 스킵
-			log.Printf("[agent] job=%s no manifest found, skipping fetch", jobID)
-		}
+		log.Printf("[agent] job=%s fetch complete: %s -> %s", jobID, man.RootCID, inputDir)
+	}
+} else {
+	// 매니페스트가 없으면 스킵
+	log.Printf("[agent] job=%s no manifest found, skipping fetch", jobID)
+}
 
 		// 5) 작업 실행 - 컨테이너를 사용하도록 변경
 		res, runErr := agent.RunInContainer(context.Background(), workDir, meta.Image, meta.Command)
