@@ -139,7 +139,7 @@ def main():
         obj = curl_json(f"{control_url}/api/tasks/{jid}", auth_token=token, timeout=5)
         st = extract_status(obj)
         status_counts[st] = status_counts.get(st, 0) + 1
-        if st in ("completed", "success", "done", "succeeded"):
+        if st in ("completed", "success", "done", "succeeded", "finished"):
             completed.add(jid)
 
     total = len(job_ids)
@@ -261,6 +261,10 @@ def main():
         print("- status breakdown:")
         for k in sorted(result["status_breakdown"].keys()):
             print(f"  - {k}: {result['status_breakdown'][k]}")
+            remain = sum(v for k,v in result["status_breakdown"].items() if k not in ("succeeded","completed","done"))
+    if remain > 0:
+        print(f"  ⚠️  remaining (not done): {remain}")
+
     print(f"- MTTR p50: {fmt(result.get('mttr_p50_s'), 's')}  (target ≤ 120s)")
     print(f"- MTTR p95: {fmt(result.get('mttr_p95_s'), 's')}  (target ≤ 180s)")
     print(f"- duplicate execution rate: {fmt(result.get('dup_exec_rate_percent'), '%')}  (target ≤ 0.1%)")

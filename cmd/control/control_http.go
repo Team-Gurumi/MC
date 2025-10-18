@@ -248,6 +248,21 @@ type CreateTaskReq struct {
 	Command []string `json:"command"`
 }
 
+func debugLeaseHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    if !requireAuth(r) { http.Error(w, "unauthorized", 401); return }
+    id := strings.TrimPrefix(r.URL.Path, "/internal/tasks/")
+    id = strings.TrimSuffix(id, "/lease")
+    var st task.TaskState; _ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
+    var le task.Lease; _ = d.GetJSON(task.KeyLease(id), &le, 2*time.Second)
+    writeJSON(w, 200, map[string]any{
+      "id": id, "status": st.Status, "owner": st.AssignedTo,
+      "lease_owner": le.Owner, "lease_expires": le.Expires, "lease_ver": le.Version,
+      "updated_at": st.UpdatedAt,
+    })
+  }
+}
+
 func createTaskHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireAuth(r) {
@@ -621,13 +636,10 @@ func releaseHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 			return
 		}
 
-		cur.Expires = time.Now().UTC()
-		cur.Version++
-		_ = d.PutJSON(task.KeyLease(id), cur)
-
+		 _ = d.DelJSON(task.KeyLease(id))
 		var st task.TaskState
 		_ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
-		if st.ID != "" && st.AssignedTo == in.AgentID {
+		  if st.ID != "" && (st.AssignedTo == in.AgentID || st.Status == task.StatusAssigned || st.Status == task.StatusRunning) {
 			st.Status = task.StatusQueued
 			st.AssignedTo = ""
 			st.UpdatedAt = time.Now().UTC()
@@ -736,6 +748,18 @@ mux.HandleFunc("/api/health", healthHandler)
         }
         http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
     })
+  
+     mux.HandleFunc("/internal/tasks/", func(w http.ResponseWriter, r *http.Request) {
+        if strings.HasSuffix(r.URL.Path, "/lease") {
+            debugLeaseHandler(d, ns).ServeHTTP(w, r); return
+        }
+        if strings.HasSuffix(r.URL.Path, "/force-requeue") {
+            forceRequeueHandler(d, ns, enqueue).ServeHTTP(w, r); return
+        }
+        http.NotFound(w, r)
+    })
+  
+
 	mux.Handle("/api/tasks/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		if r.Method == http.MethodPost {
@@ -773,7 +797,29 @@ mux.HandleFunc("/api/health", healthHandler)
 
 	return mux
 }
-
+func forceRequeueHandler(d *dhtnode.Node, ns string, enqueue func(string)) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        if !requireAuth(r) { http.Error(w, "unauthorized", http.StatusUnauthorized); return }
+        if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
+        id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/internal/tasks/"), "/force-requeue")
+        now := time.Now().UTC()
+        var st task.TaskState
+        if err := d.GetJSON(task.KeyState(id), &st, 2*time.Second); err != nil || st.ID == "" {
+            http.Error(w, "state not found", http.StatusNotFound); return
+        }
+        // lease 제거 + queued 복귀
+        _ = d.DelJSON(task.KeyLease(id))
+        st.Status = task.StatusQueued
+        st.AssignedTo = ""
+        st.UpdatedAt = now
+        st.Version++
+        if err := d.PutJSON(task.KeyState(id), st); err != nil {
+            http.Error(w, "put state failed", http.StatusInternalServerError); return
+        }
+        enqueue(id)
+        w.WriteHeader(http.StatusNoContent)
+    }
+}
 // 유효성 검증
 func validateProvider(p providerDTO) error {
 	if p.PeerID == "" {
