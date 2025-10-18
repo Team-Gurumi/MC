@@ -78,9 +78,10 @@ func (dv *Discoverer) handleJob(ctx context.Context, id string, onCandidate func
 		return
 	}
   if v, ok := dv.seen.Load(id); ok {
-        if t, ok2 := v.(time.Time); ok2 && time.Since(t) < 10*time.Second {
-            return
-        }
+       if t, ok2 := v.(time.Time); ok2 && time.Since(t) < 3*time.Second {
+    return
+}
+
         // stale → 재시도 허용
     }
 	//TASK_AD 참고 — rendezvous 필터 등

@@ -23,6 +23,8 @@ func main() {
 
 	controlURL := flag.String("control-url", "http://127.0.0.1:8080", "Control API 기본 URL")
 	authToken := flag.String("auth-token", "", "Control API 인증 토큰")
+	ttlSec := flag.Int("ttl-sec", 15, "lease TTL seconds (권장: 15)")
+	hbSec  := flag.Int("heartbeat-sec", 5, "heartbeat interval seconds (권장: 5)")
 	flag.Parse() // 플래그 파싱
 
 	// 애플리케이션의 메인 컨텍스트 생성
@@ -41,6 +43,17 @@ func main() {
 	} else {
 		token = os.Getenv("CONTROL_TOKEN")
 	}
+	// TTL/하트비트 실제 값 계산 + 안전 보정
+	leaseTTL := time.Duration(*ttlSec) * time.Second
+	hbEvery  := time.Duration(*hbSec)  * time.Second
+	if hbEvery >= leaseTTL {
+		if leaseTTL > time.Second {
+			hbEvery = leaseTTL - time.Second
+	} else {
+			hbEvery = leaseTTL / 2
+		}
+	}
+	log.Printf("[agent] config: TTL=%s heartbeat=%s (flags: -ttl-sec=%d -heartbeat-sec=%d)", leaseTTL, hbEvery, *ttlSec, *hbSec)
 
 	// Control 서버와 통신할 클라이언트 생성
 	claim := &agent.HTTPClaimClient{
@@ -68,7 +81,7 @@ func main() {
 		ctx2, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
 
-		lease, err := claim.TryClaim(ctx2, jobID, agentID, 30*time.Second)
+lease, err := claim.TryClaim(ctx2, jobID, agentID, leaseTTL)
 		if err != nil {
 			return
 		}
@@ -79,7 +92,7 @@ func main() {
 		jobCtx, cancelJob := context.WithCancel(context.Background())
 		go func(taskID, nonce string) {
 			defer log.Printf("[agent] job=%s heartbeat 종료", taskID)
-			t := time.NewTicker(15 * time.Second) // 또는 ttl/2
+			t := time.NewTicker(hbEvery)
 			defer t.Stop()
 
 			fail := 0
@@ -90,7 +103,7 @@ func main() {
 				case <-jobCtx.Done(): // 작업이 끝나면 여기로 빠져나옴
 					return
 				case <-t.C:
-					if _, err := claim.Heartbeat(context.Background(), taskID, agentID, nonce, 30*time.Second); err != nil {
+				if _, err := claim.Heartbeat(context.Background(), taskID, agentID, nonce, leaseTTL); err != nil {
 						fail++
 						if fail >= maxFail {
 							return

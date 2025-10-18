@@ -143,27 +143,21 @@ func requeueLoop(ctx context.Context, d *dhtnode.Node, ns string, mgr *AnnounceM
                 }
                
                 // The '+' character has been removed from the line below
-                if st.Status == task.StatusAssigned {
-                    var l task.ClaimRecord
-                    err := d.GetJSON(task.KeyLease(id), &l, 2*time.Second)
+   if st.Status == task.StatusAssigned {
+    var l task.Lease
+    err := d.GetJSON(task.KeyLease(id), &l, 2*time.Second)
+    expired := err != nil || l.Owner == "" || l.Expires.Before(now)
+    if expired {
+        st.Status = task.StatusQueued
+        st.AssignedTo = ""
+        st.UpdatedAt = now
+        st.Version++
+        _ = d.PutJSON(task.KeyState(id), st)
+        mgr.Enqueue(id)
+        log.Printf("[requeue] expired lease -> queued: %s", id)
+    }
+}
 
-                    // ★ 만료 판단: (1) 읽기 에러(리스 없음) OR (2) owner 없음 OR (3) 만료시간 없음 OR (4) now >= l.Expires
-                    expiredOrMissing := err != nil || l.Owner == "" || l.Expires.IsZero() || !l.Expires.After(now)
-                    if !expiredOrMissing {
-                        continue
-                    }
-
-                    // 재큐잉
-                    st.Status = task.StatusQueued
-                    st.AssignedTo = ""
-                    st.UpdatedAt = now
-                    st.Version++
-                    _ = d.PutJSON(task.KeyState(id), st)
-
-                    // 발견 재개(미러 TTL도 announce에서 갱신됨)
-                    mgr.Enqueue(id)
-                    log.Printf("[requeue] lease missing/expired -> queued: %s", id)
-                }
             }
         }
     }
@@ -183,7 +177,7 @@ func snapshotLoop(d *dhtnode.Node, ns string) {
 			if err := d.GetJSON(task.KeyState(id), &st, 2*time.Second); err != nil {
 				continue
 			}
-			if st.Status == task.StatusFinished || st.Status == task.StatusFailed {
+			if st.Status == task.StatusSucceeded || st.Status == task.StatusFailed {
 				// TODO: 여기에 DB upsert 등 스냅샷 로직
 				log.Printf("[control] snapshot %s status=%s ver=%d\n", id, st.Status, st.Version)
 			}

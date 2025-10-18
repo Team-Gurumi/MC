@@ -163,7 +163,7 @@ _ = d.DelJSON(task.KeyLease(id))
 
 func ttlOrDefault(sec int) time.Duration {
 	if sec <= 0 || sec > 3600 {
-		return 30 * time.Second
+		return 15 * time.Second
 	}
 	return time.Duration(sec) * time.Second
 }
@@ -263,12 +263,7 @@ func createTaskHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		meta := task.TaskMeta{
-			Image:   req.Image,
-			Command: req.Command,
-			
-			CreatedAt: time.Now().UTC(),
-		}
+		meta := task.TaskMeta{ ID: req.ID, Image: req.Image, Command: req.Command, CreatedAt: time.Now().UTC() }
 		if err := d.PutJSON(task.KeyMeta(req.ID), meta); err != nil {
 			http.Error(w, "dht put meta failed: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -645,6 +640,37 @@ func releaseHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 	}
 }
 
+func listTasksHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        if !requireAuth(r) {
+            http.Error(w, "unauthorized", http.StatusUnauthorized)
+            return
+        }
+        if r.Method != http.MethodGet {
+            http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+            return
+        }
+        var idx task.TaskIndex
+        if err := d.GetJSON(task.KeyIndex(ns), &idx, 2*time.Second); err != nil {
+            writeJSON(w, http.StatusOK, []any{})
+            return
+        }
+        out := make([]map[string]any, 0, len(idx.IDs))
+        for _, id := range idx.IDs {
+            var st task.TaskState
+            _ = d.GetJSON(task.KeyState(id), &st, 1*time.Second)
+            out = append(out, map[string]any{
+                "id":     id,
+                "status": st.Status,
+                "owner":  st.AssignedTo,
+                "ver":    st.Version,
+                "updated_at": st.UpdatedAt,
+            })
+        }
+        writeJSON(w, http.StatusOK, out)
+    }
+}
+
 func agentManifestHandler(d *dhtnode.Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -698,7 +724,18 @@ func validateAgentToken(token, taskID string) bool {
 func mountHTTP(d *dhtnode.Node, ns string, enqueue func(string)) *http.ServeMux {
 	mux := http.NewServeMux()
 mux.HandleFunc("/api/health", healthHandler)
-mux.Handle("/api/tasks", createTaskHandler(d, ns))
+    // /api/tasks: GET(목록) / POST(생성) 동시 지원
+    mux.HandleFunc("/api/tasks", func(w http.ResponseWriter, r *http.Request) {
+        if r.Method == http.MethodGet {
+            listTasksHandler(d, ns).ServeHTTP(w, r)
+            return
+        }
+        if r.Method == http.MethodPost {
+            createTaskHandler(d, ns).ServeHTTP(w, r)
+            return
+        }
+        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+    })
 	mux.Handle("/api/tasks/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		if r.Method == http.MethodPost {
