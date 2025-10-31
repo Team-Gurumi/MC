@@ -161,6 +161,9 @@ func requeueLoop(ctx context.Context, d *dhtnode.Node, ns string, mgr *AnnounceM
                        // 큐에 다시 올리기
                         mgr.Enqueue(id)
                         requeued++
+                        log.Printf(`{"event":"lease_expired","timestamp":"%s","job_id":"%s"}`,
+    time.Now().UTC().Format(time.RFC3339Nano), id)
+
                        log.Printf("[requeue] ns=%s task=%s -> queued (lease expired)", ns, id)
                    }
                 }

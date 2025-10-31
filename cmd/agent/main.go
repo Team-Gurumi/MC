@@ -88,6 +88,8 @@ lease, err := claim.TryClaim(ctx2, jobID, agentID, leaseTTL)
 
 		log.Printf("[agent] 작업 점유 성공 job=%s ver=%d exp=%s",
 			jobID, lease.Version, lease.Expires.Format(time.RFC3339))
+log.Printf(`{"event":"lease_acquired","timestamp":"%s","job_id":"%s","agent_id":"%s"}`,
+    time.Now().UTC().Format(time.RFC3339Nano), jobID, agentID)
 
 		jobCtx, cancelJob := context.WithCancel(context.Background())
 		go func(taskID, nonce string) {
