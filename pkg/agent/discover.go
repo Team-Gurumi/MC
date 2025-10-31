@@ -77,12 +77,19 @@ func (dv *Discoverer) handleJob(ctx context.Context, id string, onCandidate func
 	if id == "" {
 		return
 	}
-  if v, ok := dv.seen.Load(id); ok {
-       if t, ok2 := v.(time.Time); ok2 && time.Since(t) < 3*time.Second {
-    return
-}
+  
+    var st task.TaskState
+    if err := dv.d.GetJSON(task.KeyState(id), &st, 1*time.Second); err == nil {
+        if st.Status != task.StatusQueued {
+            // 다른 에이전트가 이미 들고 있으면 안 해도 됨
+            return
+        }
+    }
 
-        // stale → 재시도 허용
+    if v, ok := dv.seen.Load(id); ok {
+        if t, ok2 := v.(time.Time); ok2 && time.Since(t) < 500*time.Millisecond {
+            return
+        }
     }
 	//TASK_AD 참고 — rendezvous 필터 등
 	_, _ = dv.readTaskAd(ctx, id)
@@ -90,11 +97,11 @@ func (dv *Discoverer) handleJob(ctx context.Context, id string, onCandidate func
 	
 	 m, err := dv.readManifestMirror(ctx, id)
   if err != nil {
-       // 매니페스트 미러가 아직 없으면 스킵 (광고/미러가 전파되면 다음 틱에 잡힘)
+  
        return
    }
    providers := filterProviders(m.Providers)
-   //provider가 없거나 모두 필터링되어도 '입력 불필요 잡'일 수 있으니 후보로 넘긴다
+
    if len(providers) == 0 {
        onCandidate(id, nil)
    } else {
