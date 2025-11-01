@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 내결함성 벤치마크 (패치됨)
-# - 각 작업마다 Manifest POST 추가 (기본적으로는 아무 동작 안 함, PROVIDERS_JSON으로 재정의 가능)
-# - control.log에서 DHT 부트스트랩 정보를 에이전트로 연결
-# - 빠른 반복 테스트를 위해 기본 타이밍 단축
 
 # -------- (환경 변수로) 조정 가능한 값들 --------
 NS="${NS:-mc}"
@@ -14,11 +10,11 @@ DISABLE_AUTH="${MC_DISABLE_AUTH:-0}"
 
 AGENTS="${AGENTS:-30}"
 TASKS="${TASKS:-200}"
-HB_SEC="${HB_SEC:-5}"          # 에이전트가 지원하는 경우 읽음
-TTL_SEC="${TTL_SEC:-15}"       # 에이전트가 지원하는 경우 읽음
+HB_SEC="${HB_SEC:-5}"          
+TTL_SEC="${TTL_SEC:-15}"       
 KILL_PERCENT="${KILL_PERCENT:-10}"
-RUNTIME_BEFORE_KILL="${RUNTIME_BEFORE_KILL:-60}"     # ↓ 단축됨
-POST_KILL_OBSERVE="${POST_KILL_OBSERVE:-60}"         # ↓ 단축됨
+RUNTIME_BEFORE_KILL="${RUNTIME_BEFORE_KILL:-60}"    
+POST_KILL_OBSERVE="${POST_KILL_OBSERVE:-60}"        
 
 # 컨테이너 정책
 DOCKER_IMAGE="${DOCKER_IMAGE:-alpine:latest}"
@@ -104,7 +100,7 @@ for i in {1..50}; do
   sleep 0.1
 done
 
-# ★★★ 패치된 섹션: 부트스트랩 멀티주소 추출 (루프백/tcp 우선) ★★★
+#부트스트랩 멀티주소 추출 (루프백/tcp 우선)
 BOOTSTRAP=""
 # 127.0.0.1 주소를 먼저 시도
 BOOTSTRAP="$(awk '/addr: .*\/ip4\/127\.0\.0\.1\/tcp\/[^ ]*\/p2p\//{print $NF; exit}' "${LOGDIR}/control.log" 2>/dev/null || true)"
@@ -120,7 +116,6 @@ if [ -z "${BOOTSTRAP}" ]; then
 fi
 echo "==> Using bootstrap: ${BOOTSTRAP}"
 echo "BOOTSTRAP=${BOOTSTRAP}" >> "${OUT}/config.txt"
-# ★★★ 패치된 섹션 끝 ★★★
 
 # -------- 에이전트 생성 --------
 echo "==> Spawning ${AGENTS} agents"

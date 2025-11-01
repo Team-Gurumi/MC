@@ -4,9 +4,9 @@ from datetime import datetime, timezone
 from collections import defaultdict
 
 # analyze_metrics.py <ARTIFACT_DIR>
-# - tasks.jsonl에서 job id를 읽고, CONTROL_URL/api/tasks/<id>를 조회합니다.
-# - status를 방어적으로 추출하여 성공률과 상태 분포를 집계합니다.
-# - 로그를 기반으로 MTTR, 중복 실행률, 오탐지율을 계산합니다.
+# - tasks.jsonl에서 job id를 읽고, CONTROL_URL/api/tasks/<id>를 조회.
+# - status를 방어적으로 추출하여 성공률과 상태 분포를 집계.
+# - 로그를 기반으로 MTTR, 중복 실행률, 오탐지율을 계산.
 
 EVENTS = {"lease_acquired", "heartbeat", "lease_expired", "reassigned", "running", "completed"}
 
@@ -33,9 +33,7 @@ def curl_json(url, auth_token=None, timeout=5):
         return None
 
 def extract_status(obj):
-    """
-    다양한 API 스키마에 방어적으로 대응하여 상태(status) 값을 추출합니다.
-    """
+   
     if obj is None: return "unknown"
     for k in ("status", "state", "phase"):
         if k in obj:

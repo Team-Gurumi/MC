@@ -498,71 +498,78 @@ func logsHandler(d *dhtnode.Node) http.HandlerFunc {
 }
 
 func tryClaimHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !requireAuth(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-		if len(parts) != 4 || parts[0] != "api" || parts[1] != "tasks" || parts[3] != "try-claim" {
-			http.Error(w, "bad path", http.StatusBadRequest)
-			return
-		}
-		id := parts[2]
+    return func(w http.ResponseWriter, r *http.Request) {
+        if !requireAuth(r) {
+            http.Error(w, "unauthorized", http.StatusUnauthorized)
+            return
+        }
+        parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+        if len(parts) != 4 || parts[0] != "api" || parts[1] != "tasks" || parts[3] != "try-claim" {
+            http.Error(w, "bad path", http.StatusBadRequest)
+            return
+        }
+        id := parts[2]
 
-		var in tryClaimIn
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		ttl := ttlOrDefault(in.TTLSec)
+        var in tryClaimIn
+        if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+            http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+            return
+        }
+        if in.AgentID == "" {
+            http.Error(w, "agent_id required", http.StatusBadRequest)
+            return
+        }
+        ttl := ttlOrDefault(in.TTLSec)
 
-		var cur task.Lease
-		_ = d.GetJSON(task.KeyLease(id), &cur, 2*time.Second)
+        // 1) 상태가 queued 인지 먼저 확인
+        var st task.TaskState
+        if err := d.GetJSON(task.KeyState(id), &st, 2*time.Second); err != nil || st.ID == "" {
+            http.Error(w, "task not found", http.StatusNotFound)
+            return
+        }
+        if st.Status != task.StatusQueued {
+            // 이미 누가 들고 있거나 끝난 거
+            _ = json.NewEncoder(w).Encode(leaseOut{OK: false})
+            return
+        }
 
-		now := time.Now().UTC()
-		alive := cur.Owner != "" && cur.Expires.After(now)
-		if alive && cur.Owner != in.AgentID {
-			http.Error(w, "conflict: owned", http.StatusConflict)
-			return
-		}
+        // 2) DHT CAS 로 리스 선점
+        
+                nonce, err := task.Claim(d, id, in.AgentID, ttl)
+        if err != nil {
+            // 다른 에이전트가 거의 동시에 잡은 케이스
+            _ = json.NewEncoder(w).Encode(leaseOut{OK: false})
+            return
+        }
 
-		nz, err := newNonce()
-		if err != nil {
-			http.Error(w, "nonce err", http.StatusInternalServerError)
-			return
-		}
+        // 3) 다시 읽어서 진짜로 내가 쓴 리스인지 확인 
+        var le task.Lease
+        if err := d.GetJSON(task.KeyLease(id), &le, 2*time.Second); err != nil {
+            _ = json.NewEncoder(w).Encode(leaseOut{OK: false})
+            return
+        }
+        if le.Owner != in.AgentID || le.Nonce != nonce {
+            // 같은 타이밍에 다른 에이전트가 이겨버린 상황 → 실패로 돌려서 중복 실행 막음
+            _ = json.NewEncoder(w).Encode(leaseOut{OK: false})
+            return
+        }
 
-		next := task.Lease{
-			Owner:   in.AgentID,
-			Nonce:   nz,
-			Expires: now.Add(ttl),
-			Version: cur.Version + 1,
-		}
+        // 4) 상태를 assigned/running 으로 올려주기
+        now := time.Now().UTC()
+        st.Status = task.StatusAssigned
+        st.AssignedTo = in.AgentID
+        st.UpdatedAt = now
+        if st.StartedAt == nil {
+            st.StartedAt = &now
+        }
+        st.Version++
+        _ = d.PutJSON(task.KeyState(id), st)
 
-		if err := d.PutJSON(task.KeyLease(id), next); err != nil {
-			http.Error(w, "store err: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		var st task.TaskState
-		_ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
-		if st.ID != "" {
-			st.Status = task.StatusAssigned
-			st.AssignedTo = in.AgentID
-			st.UpdatedAt = now
-			
-			if st.StartedAt == nil { 
-    st.StartedAt = &now 
+        w.Header().Set("Content-Type", "application/json")
+        _ = json.NewEncoder(w).Encode(leaseOut{OK: true, Lease: le})
+    }
 }
-			st.Version++
-			_ = d.PutJSON(task.KeyState(id), st)
-		}
 
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(leaseOut{OK: true, Lease: next})
-	}
-}
 
 func heartbeatHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
