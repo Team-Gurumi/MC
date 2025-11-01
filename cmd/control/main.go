@@ -40,15 +40,17 @@ func (m *AnnounceManager) Enqueue(id string) {
 	m.mu.Lock()
 	m.dirty[id] = struct{}{}
 	m.mu.Unlock()
+	
+	   go m.announceOnce(context.Background(), id)
 }
 
 
 func (m *AnnounceManager) announceOnce(ctx context.Context, id string) {
 	
 	var man task.Manifest
-	if err := m.d.GetJSON(task.KeyManifest(id), &man, 2*time.Second); err != nil || man.RootCID == "" {
-		return
-	}
+	  if err := m.d.GetJSON(task.KeyManifest(id), &man, 2*time.Second); err != nil || man.RootCID == "" {
+        return
+    }
 	announceAds(ctx, m.d, m.ns, id, &man, m.ttl)
 
 	m.mu.Lock() 
@@ -119,6 +121,63 @@ func createTask(d *dhtnode.Node, ns string, id string, image string, cmd []strin
 		return true, next, nil
 	})
 }
+// Corrected Code
+func requeueLoop(ctx context.Context, d *dhtnode.Node, ns string, mgr *AnnounceManager) {
+    ticker := time.NewTicker(500 * time.Millisecond)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-ticker.C:
+            var idx task.TaskIndex
+            if err := d.GetJSON(task.KeyIndex(ns), &idx, 2*time.Second); err != nil {
+                continue
+            }
+          
+                     now := time.Now().UTC()
+           scanned, requeued := 0, 0
+            for _, id := range idx.IDs {
+          
+                var st task.TaskState
+                if err := d.GetJSON(task.KeyState(id), &st, 2*time.Second); err != nil {
+                    continue
+                }
+               
+                if st.Status == task.StatusAssigned || st.Status == task.StatusRunning {
+                   var l task.Lease
+                    err := d.GetJSON(task.KeyLease(id), &l, 2*time.Second)
+                    expired := err != nil || l.Owner == "" || now.After(l.Expires)
+                    if expired {
+                        // 상태 되돌리기
+                       st.Status = task.StatusQueued
+                        st.AssignedTo = ""
+                        st.UpdatedAt = now
+                       st.Version++
+                      _ = d.PutJSON(task.KeyState(id), st)
+                        // 낡은 lease 제거(관측 혼선 방지)
+                        _ = d.DelJSON(task.KeyLease(id))
+                       // 큐에 다시 올리기
+                        mgr.Enqueue(id)
+                        requeued++
+                        log.Printf(`{"event":"lease_expired","timestamp":"%s","job_id":"%s"}`,
+    time.Now().UTC().Format(time.RFC3339Nano), id)
+
+                       log.Printf("[requeue] ns=%s task=%s -> queued (lease expired)", ns, id)
+                   }
+                }
+                scanned++
+            }
+            if scanned > 0 {
+                log.Printf("[requeue.tick] ns=%s scanned=%d requeued=%d t=%s", ns, scanned, requeued, now.UTC().Format(time.RFC3339))
+            }
+
+
+
+            }
+        }
+    }
 
 func snapshotLoop(d *dhtnode.Node, ns string) {
 	t := time.NewTicker(10 * time.Second)
@@ -135,7 +194,7 @@ func snapshotLoop(d *dhtnode.Node, ns string) {
 			if err := d.GetJSON(task.KeyState(id), &st, 2*time.Second); err != nil {
 				continue
 			}
-			if st.Status == task.StatusFinished || st.Status == task.StatusFailed {
+			if st.Status == task.StatusSucceeded || st.Status == task.StatusFailed {
 				// TODO: 여기에 DB upsert 등 스냅샷 로직
 				log.Printf("[control] snapshot %s status=%s ver=%d\n", id, st.Status, st.Version)
 			}
@@ -144,6 +203,8 @@ func snapshotLoop(d *dhtnode.Node, ns string) {
 }
 
 func main() {
+
+
 	var (
 		ns        = flag.String("ns", "mc", "DHT namespace prefix")
 		bootstrap = flag.String("bootstrap", "", "comma-separated bootstrap multiaddrs")
@@ -197,8 +258,10 @@ func main() {
 	// AnnounceManager 생성 및 실행
 	const ttl = 30 * time.Second
 	const interval = ttl / 2
-	mgr := NewAnnounceManager(node, *ns, ttl, interval) 
-	go mgr.Run(ctx)
+	mgr := NewAnnounceManager(node, *ns, 30*time.Second /*ttl*/, 3*time.Second /*interval*/)
+
+go mgr.Run(ctx)
+go requeueLoop(ctx, node, *ns, mgr) // 리스 만료 감시 루프
 
 	// HTTP 서버 기동 
 	mux := mountHTTP(node, *ns, mgr.Enqueue)

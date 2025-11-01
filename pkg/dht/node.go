@@ -289,70 +289,86 @@ func jitterBackoff(i int) time.Duration {
 	j := time.Duration(rand.Intn(200)) * time.Millisecond
 	return base + j
 }
-
 // PutJSONCAS: check(prev) -> next 생성 -> Put -> Verify 의 재시도 루프
 func (n *Node) PutJSONCAS(key string, check func(prev []byte) (ok bool, next []byte, err error)) error {
-	var lastErr error
-	for i := 0; i < 5; i++ {
-		// 1) prev read
-		var prev []byte
-		{
-			ctx, cancel := n.withTimeout(3 * time.Second)
-			val, err := n.DHT.GetValue(ctx, n.nsKey(key))
-			cancel()
-			if err == nil {
-				prev = val
-			} else {
-				prev = nil
-			}
-		}
+    nsKey := n.nsKey(key)
+    var lastErr error
+    for i := 0; i < 5; i++ {
+        // 1) prev read (네트워크 + localStore 폴백)
+        var prev []byte
+        {
+            ctx, cancel := n.withTimeout(3 * time.Second)
+            val, err := n.DHT.GetValue(ctx, nsKey)
+            cancel()
+            if err == nil {
+                prev = val
+            } else {
+                // ★ 여기: 네트워크에 없으면 localStore에서라도 읽기
+                if lv, ok := localStore.Load(nsKey); ok {
+                    prev = lv.([]byte)
+                } else {
+                    prev = nil
+                }
+            }
+        }
 
-		// 2) check & next 생성
-		ok, next, err := check(prev)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			lastErr = ErrCASConflict
-			time.Sleep(jitterBackoff(i))
-			continue
-		}
+        // 2) check & next
+        ok, next, err := check(prev)
+        if err != nil {
+            return err
+        }
+        if !ok {
+            lastErr = ErrCASConflict
+            time.Sleep(jitterBackoff(i))
+            continue
+        }
 
-		// 3) put
-		{
-			ctx, cancel := n.withTimeout(5 * time.Second)
-			err = n.DHT.PutValue(ctx, n.nsKey(key), next)
-			cancel()
-			if err != nil {
-				lastErr = err
-				time.Sleep(jitterBackoff(i))
-				continue
-			}
-		}
+        // 3) put (네트워크 → 실패하면 localStore)
+        {
+            ctx, cancel := n.withTimeout(5 * time.Second)
+            err = n.DHT.PutValue(ctx, nsKey, next)
+            cancel()
+            if err != nil {
+                // ★ 여기: 싱글 노드/피어 없음 → localStore 폴백
+                if strings.Contains(err.Error(), "failed to find any peer in table") {
+                    localStore.Store(nsKey, next)
+                    return nil
+                }
+                lastErr = err
+                time.Sleep(jitterBackoff(i))
+                continue
+            }
+        }
 
-		// 4) verify
-		{
-			ctx, cancel := n.withTimeout(3 * time.Second)
-			after, err := n.DHT.GetValue(ctx, n.nsKey(key))
-			cancel()
-			if err != nil {
-				lastErr = err
-				time.Sleep(jitterBackoff(i))
-				continue
-			}
-			if string(after) != string(next) {
-				lastErr = ErrCASConflict
-				time.Sleep(jitterBackoff(i))
-				continue
-			}
-		}
-		return nil
-	}
-	if lastErr == nil {
-		lastErr = ErrCASConflict
-	}
-	return lastErr
+        // 4) verify (네트워크 → 실패하면 localStore)
+        {
+            ctx, cancel := n.withTimeout(3 * time.Second)
+            after, err := n.DHT.GetValue(ctx, nsKey)
+            cancel()
+            if err != nil {
+                if lv, ok := localStore.Load(nsKey); ok {
+                    after = lv.([]byte)
+                } else {
+                    lastErr = err
+                    time.Sleep(jitterBackoff(i))
+                    continue
+                }
+            }
+            if string(after) != string(next) {
+                lastErr = ErrCASConflict
+                time.Sleep(jitterBackoff(i))
+                continue
+            }
+        }
+
+        return nil
+    }
+    if lastErr == nil {
+        lastErr = ErrCASConflict
+    }
+    return lastErr
 }
+
 func (n *Node) Connect(ctx context.Context, maddrStr string) error {
 	m, err := ma.NewMultiaddr(maddrStr)
 	if err != nil {

@@ -11,7 +11,6 @@ const (
     StatusAssigned  TaskStatus = "assigned"
     StatusRunning   TaskStatus = "running"
      StatusSucceeded = "succeeded" 
-StatusFinished TaskStatus = "finished" 
     StatusFailed    TaskStatus = "failed"
 )
 

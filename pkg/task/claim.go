@@ -10,10 +10,13 @@ import (
 	dhtnode "github.com/Team-Gurumi/MC/pkg/dht"
 )
 
+
 var (
 	ErrLeaseBusy   = errors.New("lease busy")
 	ErrLeaseStolen = errors.New("lease stolen by another peer")
 )
+
+const DefaultLeaseTTL = 20 * time.Second
 
 func randNonce() string {
 	var b [16]byte
@@ -32,32 +35,31 @@ func Claim(d *dhtnode.Node, taskID, myPeer string, ttl time.Duration) (string, e
 	check := func(prev []byte) (bool, []byte, error) {
 		now := time.Now().UTC()
 
-		var old ClaimRecord
+		var old Lease
 		if len(prev) > 0 {
 			if err := json.Unmarshal(prev, &old); err != nil {
-				old = ClaimRecord{}
+				// 깨진 값이면 새로 쓰도록 한다
+				old = Lease{}
 			}
 		}
 
-		// 이전 리스가 유효하면 점유 중
-		// 이전 리스가 유효하면 점유 중
-if !old.Expires.IsZero() && old.Expires.After(now) && old.Owner != "" {
-    return false, nil, nil
-}
+		// 이전 리스가 아직 살아 있으면 점유 중
+		if old.Owner != "" && !old.Expires.IsZero() && old.Expires.After(now) {
+			return false, nil, ErrLeaseBusy
+		}
 
-newL := ClaimRecord{
-    TaskID:    taskID,
-    Owner:     myPeer,
-    Nonce:     nonce,
-    Expires:   now.Add(ttl),
-    UpdatedAt: now,
-}
-next, err := json.Marshal(newL)
-        if err != nil {
-            return false, nil, err
-        }
-        return true, next, nil
-    } 
+		newL := Lease{
+			Owner:   myPeer,
+			Nonce:   nonce,
+			Expires: now.Add(ttl),
+			Version: old.Version + 1, // 펜싱 토큰
+		}
+		next, err := json.Marshal(newL)
+		if err != nil {
+			return false, nil, err
+		}
+		return true, next, nil
+	}
 
 	if err := d.PutJSONCAS(key, check); err != nil {
 		return "", err
@@ -72,41 +74,53 @@ func Heartbeat(d *dhtnode.Node, taskID, myPeer, myNonce string, ttl time.Duratio
 	}
 	key := KeyLease(taskID)
 	return d.PutJSONCAS(key, func(prev []byte) (bool, []byte, error) {
-    now := time.Now().UTC()
-    var cur ClaimRecord // 타입을 ClaimRecord로 변경
-    if len(prev) > 0 {
-        if err := json.Unmarshal(prev, &cur); err != nil {
-            return false, nil, err
-        }
-    }
-    if cur.Owner != myPeer || cur.Nonce != myNonce { // Owner로 변경
-        return false, nil, ErrLeaseStolen
-    }
-    cur.UpdatedAt = now // 이제 정상 동작
-    cur.Expires = now.Add(ttl) // Expires로 변경
-    next, _ := json.Marshal(cur)
-    return true, next, nil
-})
+		now := time.Now().UTC()
 
+		var cur Lease
+		if len(prev) == 0 {
+			// 리스가 없으면 갱신 안 함
+			return false, nil, nil
+		}
+		if err := json.Unmarshal(prev, &cur); err != nil {
+			return false, nil, err
+		}
+
+		// 내 리스가 아니면 연장 금지
+		if cur.Owner != myPeer || cur.Nonce != myNonce {
+			return false, nil, ErrLeaseStolen
+		}
+
+	
+		cur.Expires = now.Add(ttl)
+		cur.Version++
+
+		next, _ := json.Marshal(cur)
+		return true, next, nil
+	})
 }
 
-// Release: 삭제 대신 즉시 만료 표식
+// Release: 내가 가진 리스를 의도적으로 내려놓기
 func Release(d *dhtnode.Node, taskID, myPeer, myNonce string) error {
 	key := KeyLease(taskID)
 	return d.PutJSONCAS(key, func(prev []byte) (bool, []byte, error) {
-    now := time.Now().UTC()
-    var cur ClaimRecord
-    if len(prev) > 0 {
-        if err := json.Unmarshal(prev, &cur); err != nil {
-            return false, nil, err
-        }
-    }
-    if cur.Owner != myPeer || cur.Nonce != myNonce { // Owner로 변경
-        return false, nil, ErrLeaseStolen
-    }
-    cur.Expires = now.Add(-1 * time.Second) // Expires로 변경
-    cur.UpdatedAt = now // 이제 정상 동작
-    next, _ := json.Marshal(cur)
-    return true, next, nil
-})
+		var cur Lease
+		if len(prev) == 0 {
+			return false, nil, nil
+		}
+		if err := json.Unmarshal(prev, &cur); err != nil {
+			return false, nil, err
+		}
+		if cur.Owner != myPeer || cur.Nonce != myNonce {
+			return false, nil, ErrLeaseStolen
+		}
+
+		cur.Owner = ""
+		cur.Nonce = ""
+		cur.Expires = time.Time{}
+		cur.Version++
+
+		next, _ := json.Marshal(cur)
+		return true, next, nil
+	})
 }
+

@@ -77,24 +77,38 @@ func (dv *Discoverer) handleJob(ctx context.Context, id string, onCandidate func
 	if id == "" {
 		return
 	}
-	if _, ok := dv.seen.Load(id); ok {
-		return // 디바운스
-	}
+  
+    var st task.TaskState
+    if err := dv.d.GetJSON(task.KeyState(id), &st, 1*time.Second); err == nil {
+        if st.Status != task.StatusQueued {
+            // 다른 에이전트가 이미 들고 있으면 안 해도 됨
+            return
+        }
+    }
 
-	// (선택) TASK_AD 참고 — rendezvous 필터 등
+    if v, ok := dv.seen.Load(id); ok {
+        if t, ok2 := v.(time.Time); ok2 && time.Since(t) < 500*time.Millisecond {
+            return
+        }
+    }
+	//TASK_AD 참고 — rendezvous 필터 등
 	_, _ = dv.readTaskAd(ctx, id)
 
-	m, err := dv.readManifestMirror(ctx, id)
-	if err != nil || len(m.Providers) == 0 {
-		return
-	}
-	providers := filterProviders(m.Providers)
-	if len(providers) == 0 {
-		return
-	}
+	
+	 m, err := dv.readManifestMirror(ctx, id)
+  if err != nil {
+  
+       return
+   }
+   providers := filterProviders(m.Providers)
 
-	onCandidate(id, providers)
-	dv.seen.Store(id, time.Now().UTC())
+   if len(providers) == 0 {
+       onCandidate(id, nil)
+   } else {
+       onCandidate(id, providers)
+   }
+	
+	dv.seen.Store(id, time.Now())
 }
 
 func (dv *Discoverer) Run(ctx context.Context, listIDs func() []string, onCandidate func(jobID string, providers []task.Provider)) {

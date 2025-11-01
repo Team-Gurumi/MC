@@ -23,6 +23,8 @@ func main() {
 
 	controlURL := flag.String("control-url", "http://127.0.0.1:8080", "Control API 기본 URL")
 	authToken := flag.String("auth-token", "", "Control API 인증 토큰")
+	ttlSec := flag.Int("ttl-sec", 15, "lease TTL seconds (권장: 15)")
+	hbSec  := flag.Int("heartbeat-sec", 5, "heartbeat interval seconds (권장: 5)")
 	flag.Parse() // 플래그 파싱
 
 	// 애플리케이션의 메인 컨텍스트 생성
@@ -41,6 +43,17 @@ func main() {
 	} else {
 		token = os.Getenv("CONTROL_TOKEN")
 	}
+	// TTL/하트비트 실제 값 계산 + 안전 보정
+	leaseTTL := time.Duration(*ttlSec) * time.Second
+	hbEvery  := time.Duration(*hbSec)  * time.Second
+	if hbEvery >= leaseTTL {
+		if leaseTTL > time.Second {
+			hbEvery = leaseTTL - time.Second
+	} else {
+			hbEvery = leaseTTL / 2
+		}
+	}
+	log.Printf("[agent] config: TTL=%s heartbeat=%s (flags: -ttl-sec=%d -heartbeat-sec=%d)", leaseTTL, hbEvery, *ttlSec, *hbSec)
 
 	// Control 서버와 통신할 클라이언트 생성
 	claim := &agent.HTTPClaimClient{
@@ -68,18 +81,20 @@ func main() {
 		ctx2, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
 
-		lease, err := claim.TryClaim(ctx2, jobID, agentID, 30*time.Second)
+lease, err := claim.TryClaim(ctx2, jobID, agentID, leaseTTL)
 		if err != nil {
 			return
 		}
 
 		log.Printf("[agent] 작업 점유 성공 job=%s ver=%d exp=%s",
 			jobID, lease.Version, lease.Expires.Format(time.RFC3339))
+log.Printf(`{"event":"lease_acquired","timestamp":"%s","job_id":"%s","agent_id":"%s"}`,
+    time.Now().UTC().Format(time.RFC3339Nano), jobID, agentID)
 
 		jobCtx, cancelJob := context.WithCancel(context.Background())
 		go func(taskID, nonce string) {
 			defer log.Printf("[agent] job=%s heartbeat 종료", taskID)
-			t := time.NewTicker(15 * time.Second) // 또는 ttl/2
+			t := time.NewTicker(hbEvery)
 			defer t.Stop()
 
 			fail := 0
@@ -90,7 +105,7 @@ func main() {
 				case <-jobCtx.Done(): // 작업이 끝나면 여기로 빠져나옴
 					return
 				case <-t.C:
-					if _, err := claim.Heartbeat(context.Background(), taskID, agentID, nonce, 30*time.Second); err != nil {
+				if _, err := claim.Heartbeat(context.Background(), taskID, agentID, nonce, leaseTTL); err != nil {
 						fail++
 						if fail >= maxFail {
 							return
@@ -108,36 +123,42 @@ func main() {
 		_ = os.MkdirAll(workDir, 0o755)
 
 		var meta task.TaskMeta
-		if err := d.GetJSON(task.KeyMeta(jobID), &meta, 3*time.Second); err != nil {
+		if err := d.GetJSON(task.KeyMeta(
+		jobID), &meta, 3*time.Second); err != nil {
 			_ = finish.Report(context.Background(), jobID, "failed",
 				map[string]any{"error_stage": "get_meta"}, "", nil, "get meta failed: "+err.Error())
 			cancelJob()
 			return
 		}
 		// 4) 입력 파일 준비 (매니페스트 로드 및 Fetch)
-		inputDir := filepath.Join(workDir, "input")
-		if err := os.MkdirAll(inputDir, 0o755); err != nil {
+inputDir := filepath.Join(workDir, "input")
+if err := os.MkdirAll(inputDir, 0o755); err != nil {
+	_ = finish.Report(context.Background(), jobID, "failed",
+		map[string]any{"error_stage": "create_input_dir"}, "", nil, "create input dir failed: "+err.Error())
+	cancelJob()
+	return
+}
+
+var man task.Manifest
+if err := d.GetJSON(task.KeyManifest(jobID), &man, 3*time.Second); err == nil && man.RootCID != "" {
+	// 입력이 명시적으로 '없음'이면 fetch 스킵
+	if strings.EqualFold(man.RootCID, "noop") || len(man.Providers) == 0 {
+		log.Printf("[agent] job=%s no input fetch (root_cid=%q providers=%d) -> skip", jobID, man.RootCID, len(man.Providers))
+	} else {
+		log.Printf("[agent] job=%s fetching input: %s", jobID, man.RootCID)
+		if _, err := agent.FetchAny(context.Background(), d, man.RootCID, man.Providers, inputDir); err != nil {
+			// Fetch 실패 시 종료 보고
 			_ = finish.Report(context.Background(), jobID, "failed",
-				map[string]any{"error_stage": "create_input_dir"}, "", nil, "create input dir failed: "+err.Error())
+				map[string]any{"error_stage": "fetch_input"}, "", nil, "fetch failed: "+err.Error())
 			cancelJob()
 			return
 		}
-
-		var man task.Manifest
-		if err := d.GetJSON(task.KeyManifest(jobID), &man, 3*time.Second); err == nil && man.RootCID != "" {
-			log.Printf("[agent] job=%s fetching input: %s", jobID, man.RootCID)
-			if _, err := agent.FetchAny(context.Background(), d, man.RootCID, man.Providers, inputDir); err != nil {
-				// Fetch 실패 시 종료 보고
-				_ = finish.Report(context.Background(), jobID, "failed",
-					map[string]any{"error_stage": "fetch_input"}, "", nil, "fetch failed: "+err.Error())
-				cancelJob()
-				return
-			}
-			log.Printf("[agent] job=%s fetch complete: %s -> %s", jobID, man.RootCID, inputDir)
-		} else {
-			// 매니페스트가 없으면 스킵
-			log.Printf("[agent] job=%s no manifest found, skipping fetch", jobID)
-		}
+		log.Printf("[agent] job=%s fetch complete: %s -> %s", jobID, man.RootCID, inputDir)
+	}
+} else {
+	// 매니페스트가 없으면 스킵
+	log.Printf("[agent] job=%s no manifest found, skipping fetch", jobID)
+}
 
 		// 5) 작업 실행 - 컨테이너를 사용하도록 변경
 		res, runErr := agent.RunInContainer(context.Background(), workDir, meta.Image, meta.Command)

@@ -30,7 +30,15 @@ func (n *Node) PutJSON(key string, v any) error {
 	}
 	return nil
 }
-
+func (n *Node) DelJSON(key string) error {
+    // 1) 네트워크에는 빈 객체를 tombstone으로 넣는다.
+    if err := n.PutJSON(key, struct{}{}); err != nil {
+        return err
+    }
+    // 2) 로컬 폴백 스토어에도 흔적이 있으면 제거(선택)
+    localStore.Delete(n.nsKey(key))
+    return nil
+}
 // GetJSON: 네트워크 GetValue 실패 시 localStore 폴백.
 func (n *Node) GetJSON(key string, out any, timeout time.Duration) error {
     ctx, cancel := n.withTimeout(timeout)
