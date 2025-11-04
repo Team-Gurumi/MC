@@ -46,8 +46,8 @@ func (c *HTTPClaimClient) TryClaim(ctx context.Context, taskID, agentID string, 
     return &out.Lease, nil
 }
 
-func (c *HTTPClaimClient) Heartbeat(ctx context.Context, taskID, agentID, nonce string, ttl time.Duration) (*Lease, error) {
-    in := map[string]any{"agent_id": agentID, "nonce": nonce, "ttl_sec": int(ttl.Seconds())}
+func (c *HTTPClaimClient) Heartbeat(ctx context.Context, taskID, agentID, nonce string, ttl time.Duration, leaseVersion int64,) (*Lease, error) {
+    in := map[string]any{"agent_id": agentID, "nonce": nonce, "ttl_sec": int(ttl.Seconds()), "lease_version": leaseVersion,}
     var out struct{ OK bool `json:"ok"`; Lease Lease `json:"lease"` }
     if err := c.post(ctx, "/api/tasks/"+taskID+"/heartbeat", in, &out); err != nil { return nil, err }
     if !out.OK { return nil, fmt.Errorf("heartbeat not ok") }

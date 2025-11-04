@@ -6,11 +6,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"errors"
+	"strconv"
 	"net/http"
 	"os"
 	"strings"
 	"time"
-
+	"log"
+	"github.com/Team-Gurumi/MC/pkg/demand"
 	dhtnode "github.com/Team-Gurumi/MC/pkg/dht"
 	"github.com/Team-Gurumi/MC/pkg/task"
 	peer "github.com/libp2p/go-libp2p/core/peer"
@@ -55,9 +58,10 @@ type tryClaimIn struct {
 	TTLSec  int    `json:"ttl_sec"`
 }
 type hbIn struct {
-	AgentID string `json:"agent_id"`
-	Nonce   string `json:"nonce"`
-	TTLSec  int    `json:"ttl_sec"`
+	AgentID      string `json:"agent_id"`
+	Nonce        string `json:"nonce"`
+	TTLSec       int    `json:"ttl_sec"`
+	LeaseVersion int64  `json:"lease_version"`
 }
 type releaseIn struct {
 	AgentID string `json:"agent_id"`
@@ -88,14 +92,14 @@ type finishIn struct {
 }
 
 func putManifestMirror(node *dhtnode.Node, id string, providers []task.Provider, ttl time.Duration) error {
-    mir := manifestMirror{
-        Providers: providers,
-        Exp:       time.Now().UTC().Add(ttl),
-    }
-    return node.PutJSON(keyP2PManifestMirror(id), mir)
+	mir := manifestMirror{
+		Providers: providers,
+		Exp:       time.Now().UTC().Add(ttl),
+	}
+	return node.PutJSON(keyP2PManifestMirror(id), mir)
 }
 
-func finishHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
+func finishHandler(d *dhtnode.Node, store demand.Store, ns string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireAuth(r) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -119,43 +123,36 @@ func finishHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 			return
 		}
 
-		// 상태 갱신
+		agentID := r.Header.Get("X-Agent-ID")
+		tokenStr := r.Header.Get("X-Lease-Token")
+		var token uint64
+		if tokenStr != "" {
+			if v, err := strconv.ParseUint(tokenStr, 10, 64); err == nil {
+				token = v
+			}
+		}
+
+		succeeded := strings.ToLower(in.Status) == "succeeded"
+
+		if err := store.Finish(r.Context(), id, agentID, token, succeeded, in.ResultCID, in.Artifacts, in.Metrics); err != nil {
+			http.Error(w, "finish failed: "+err.Error(), http.StatusConflict)
+			return
+		}
+
+		// DHT 쪽도 기존 코드처럼 덮어주기
 		var st task.TaskState
 		_ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
-		st.ID = id
-		switch strings.ToLower(in.Status) {
-		case "succeeded":
+		now := time.Now().UTC()
+		if succeeded {
 			st.Status = task.StatusSucceeded
-		default:
+		} else {
 			st.Status = task.StatusFailed
 		}
-		now := time.Now().UTC()
 		st.UpdatedAt = now
-		st.Version++
 		st.FinishedAt = &now
-
-		 if st.StartedAt != nil { // st.StartedAt이 포인터이므로 nil인지 확인
-			if in.Metrics == nil {
-				in.Metrics = make(map[string]any)
-			}
-			in.Metrics["duration_ms"] = now.Sub(*st.StartedAt).Milliseconds()
-		}
-
-		//메트릭/결과 저장
-		if in.Metrics != nil {
-			
-			st.Metrics = in.Metrics
-			_ = d.PutJSON(fmt.Sprintf("task/%s/metrics", id), in.Metrics)
-		}
-		if in.ResultCID != "" {
-			_ = d.PutJSON(fmt.Sprintf("task/%s/result_root", id), map[string]string{"cid": in.ResultCID})
-			 st.ResultRootCID = in.ResultCID
-		}
-		if len(in.Artifacts) > 0 {
-			_ = d.PutJSON(fmt.Sprintf("task/%s/artifacts", id), in.Artifacts)
-		}
+		st.Version++
 		_ = d.PutJSON(task.KeyState(id), st)
-_ = d.DelJSON(task.KeyLease(id))
+		_ = d.DelJSON(task.KeyLease(id))
 
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -177,20 +174,22 @@ type taskAd struct {
 	JobID     string    `json:"job_id"`
 	Namespace string    `json:"ns,omitempty"`
 	Topic     string    `json:"topic,omitempty"`
+	DemandURL string    `json:"demand_url,omitempty"` 
 	Exp       time.Time `json:"exp"`
 	Sig       string    `json:"sig,omitempty"`
 }
 type manifestMirror struct {
-    Providers []task.Provider `json:"providers"`
-    Exp       time.Time       `json:"exp"`
+	Providers []task.Provider `json:"providers"`
+	Exp       time.Time       `json:"exp"`
 }
+
 // p2p/<id>/manifest 미러: P2P 좌표만 짧게
 type manifestAd struct {
-	RootCID    string        `json:"root_cid"`
+	RootCID    string         `json:"root_cid"`
 	Providers  []task.Provider `json:"providers"`
-	Rendezvous string        `json:"rendezvous,omitempty"`
-	Transports []string      `json:"transports,omitempty"`
-	Exp        time.Time     `json:"exp"`
+	Rendezvous string         `json:"rendezvous,omitempty"`
+	Transports []string       `json:"transports,omitempty"`
+	Exp        time.Time      `json:"exp"`
 }
 
 func getNamespace() string {
@@ -249,21 +248,31 @@ type CreateTaskReq struct {
 }
 
 func debugLeaseHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
-  return func(w http.ResponseWriter, r *http.Request) {
-    if !requireAuth(r) { http.Error(w, "unauthorized", 401); return }
-    id := strings.TrimPrefix(r.URL.Path, "/internal/tasks/")
-    id = strings.TrimSuffix(id, "/lease")
-    var st task.TaskState; _ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
-    var le task.Lease; _ = d.GetJSON(task.KeyLease(id), &le, 2*time.Second)
-    writeJSON(w, 200, map[string]any{
-      "id": id, "status": st.Status, "owner": st.AssignedTo,
-      "lease_owner": le.Owner, "lease_expires": le.Expires, "lease_ver": le.Version,
-      "updated_at": st.UpdatedAt,
-    })
-  }
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireAuth(r) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		id := strings.TrimPrefix(r.URL.Path, "/internal/tasks/")
+		id = strings.TrimSuffix(id, "/lease")
+		var st task.TaskState
+		_ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
+		var le task.Lease
+		_ = d.GetJSON(task.KeyLease(id), &le, 2*time.Second)
+		writeJSON(w, 200, map[string]any{
+			"id":           id,
+			"status":       st.Status,
+			"owner":        st.AssignedTo,
+			"lease_owner":  le.Owner,
+			"lease_expires": le.Expires,
+			"lease_ver":    le.Version,
+			"updated_at":   st.UpdatedAt,
+		})
+	}
 }
 
-func createTaskHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
+// ★ 여기서 enqueue 추가
+func createTaskHandler(d *dhtnode.Node, store demand.Store, ns string, enqueue func(string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireAuth(r) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -278,13 +287,33 @@ func createTaskHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		meta := task.TaskMeta{ ID: req.ID, Image: req.Image, Command: req.Command, CreatedAt: time.Now().UTC() }
+
+		now := time.Now().UTC()
+
+		// 1) DB에 먼저 기록
+		if err := store.CreateJob(r.Context(), demand.DBJob{
+			ID:        req.ID,
+			Image:     req.Image,
+			Command:   req.Command,
+			Status:    demand.StatusQueued,
+			CreatedAt: now,
+		}); err != nil {
+			http.Error(w, "db create failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// 2) 에이전트 discover 용으로 DHT에도 메타 쓰기
+		meta := task.TaskMeta{ID: req.ID, Image: req.Image, Command: req.Command, CreatedAt: now}
 		if err := d.PutJSON(task.KeyMeta(req.ID), meta); err != nil {
 			http.Error(w, "dht put meta failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// 상태도 그대로
 		st := task.TaskState{
-			ID: req.ID, Status: task.StatusQueued, UpdatedAt: time.Now(), Version: 1,
+			ID:        req.ID,
+			Status:    task.StatusQueued,
+			UpdatedAt: now,
+			Version:   1,
 		}
 		if err := d.PutJSON(task.KeyState(req.ID), st); err != nil {
 			http.Error(w, "dht put state failed: "+err.Error(), http.StatusInternalServerError)
@@ -294,11 +323,17 @@ func createTaskHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 			http.Error(w, "index update failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		// ★ 새 잡도 바로 광고 큐에 넣는다
+		if enqueue != nil {
+			enqueue(req.ID)
+		}
+
 		writeJSON(w, http.StatusCreated, map[string]any{"job_id": req.ID})
 	}
 }
 
-func getTaskHandler(d *dhtnode.Node) http.HandlerFunc {
+func getTaskHandler(store demand.Store, d *dhtnode.Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireAuth(r) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -313,46 +348,20 @@ func getTaskHandler(d *dhtnode.Node) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		var meta task.TaskMeta
-		if err := d.GetJSON(task.KeyMeta(id), &meta, 2*time.Second); err != nil {
+
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+
+		job, err := store.GetJob(ctx, id)
+		if err != nil {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		var st task.TaskState
-		_ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
 
-		
-		var metrics map[string]any
-		_ = d.GetJSON(fmt.Sprintf("task/%s/metrics", id), &metrics, 2*time.Second)
-		if metrics == nil {
-			metrics = make(map[string]any)
-		}
-
-		var artifacts []string
-		_ = d.GetJSON(fmt.Sprintf("task/%s/artifacts", id), &artifacts, 2*time.Second)
-		if artifacts == nil {
-			artifacts = make([]string, 0)
-		}
-
-		var resultRoot map[string]string
-		_ = d.GetJSON(fmt.Sprintf("task/%s/result_root", id), &resultRoot, 2*time.Second)
-
-		
-		var result any
-		if cid, ok := resultRoot["cid"]; ok && cid != "" {
-			result = map[string]string{"root_cid": cid}
-		} else {
-			result = make(map[string]any) // Return empty object instead of null
-		}
-
+		// manifest 는 DHT에서 쓰는 게 맞음 (시더 정보)
 		var man task.Manifest
-		hasManifest := false
-		if err := d.GetJSON(task.KeyManifest(id), &man, 2*time.Second); err == nil && man.RootCID != "" {
-			hasManifest = true
-		}
-
 		var outMan *manifestOutDTO
-		if hasManifest {
+		if err := d.GetJSON(task.KeyManifest(id), &man, 2*time.Second); err == nil && man.RootCID != "" {
 			m := &manifestOutDTO{
 				RootCID:    man.RootCID,
 				Providers:  make([]providerDTO, len(man.Providers)),
@@ -372,14 +381,16 @@ func getTaskHandler(d *dhtnode.Node) http.HandlerFunc {
 			outMan = m
 		}
 
-		st.Metrics = nil
-
 		resp := map[string]any{
-			"meta":      meta,
-			"state":     st,
-			"metrics":   metrics,
-			"artifacts": artifacts,
-			"result":    result,
+			"meta": map[string]any{
+				"id":      job.ID,
+				"image":   job.Image,
+				"command": job.Command,
+			},
+			"state": map[string]any{
+				"id":     job.ID,
+				"status": job.Status,
+			},
 		}
 		if outMan != nil {
 			resp["manifest"] = outMan
@@ -389,7 +400,7 @@ func getTaskHandler(d *dhtnode.Node) http.HandlerFunc {
 	}
 }
 
-func manifestHandler(d *dhtnode.Node, enqueue func(string)) http.HandlerFunc {
+func manifestHandler(d *dhtnode.Node, store demand.Store, enqueue func(string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireAuth(r) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -411,25 +422,22 @@ func manifestHandler(d *dhtnode.Node, enqueue func(string)) http.HandlerFunc {
 			http.Error(w, "root_cid required", http.StatusBadRequest)
 			return
 		}
-		/*
-		// providers가 비어 있어도 허용하도록 주석 처리
-		if len(in.Providers) == 0 {
-			http.Error(w, "providers required (seeders deprecated)", http.StatusBadRequest)
-			return
-		}
-		*/
 		if err := validateTransports(in.Transports); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		for i, pv := range in.Providers {
-			if err := validateProvider(pv); err != nil {
-				http.Error(w, fmt.Sprintf("provider[%d]: %v", i, err), http.StatusBadRequest)
-				return
-			}
-		}
-
 		
+		// allow noop manifest: root_cid == "noop" and no providers
+       if !(in.RootCID == "noop" && len(in.Providers) == 0) {
+           for i, pv := range in.Providers {
+               if err := validateProvider(pv); err != nil {
+                   http.Error(w, fmt.Sprintf("provider[%d]: %v", i, err), http.StatusBadRequest)
+                   return
+               }
+           }
+       }
+		
+
 		if in.UpdatedAt.IsZero() {
 			in.UpdatedAt = time.Now().UTC()
 		}
@@ -456,24 +464,33 @@ func manifestHandler(d *dhtnode.Node, enqueue func(string)) http.HandlerFunc {
 			http.Error(w, "store error: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-   ttl := 2 * time.Minute
-   mir := manifestMirror{
-        Providers: man.Providers,
-       Exp:       time.Now().UTC().Add(ttl),
-   }
-    if err := d.PutJSON(keyP2PManifestMirror(id), mir); err != nil {
-        http.Error(w, "mirror store error: "+err.Error(), http.StatusInternalServerError)
-       return
-   }
+		ttl := 2 * time.Minute
+		mir := manifestMirror{
+			Providers: man.Providers,
+			Exp:       time.Now().UTC().Add(ttl),
+		}
+		if err := d.PutJSON(keyP2PManifestMirror(id), mir); err != nil {
+			http.Error(w, "mirror store error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := store.AttachManifest(r.Context(), id, demand.Manifest{
+			RootCID:   in.RootCID,
+			Providers: providerIDs(in.Providers),
+			EncMeta:   in.EncMeta,
+		}); err != nil {
+			http.Error(w, "db attach manifest failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		enqueue(id)
 
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
+
 func healthHandler(w http.ResponseWriter, r *http.Request) {
- w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-    _, _ = w.Write([]byte(`{"ok":true}`))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 // ===== GET /api/tasks/{id}/logs =====
@@ -497,120 +514,76 @@ func logsHandler(d *dhtnode.Node) http.HandlerFunc {
 	}
 }
 
-func tryClaimHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        if !requireAuth(r) {
-            http.Error(w, "unauthorized", http.StatusUnauthorized)
-            return
-        }
-        parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-        if len(parts) != 4 || parts[0] != "api" || parts[1] != "tasks" || parts[3] != "try-claim" {
-            http.Error(w, "bad path", http.StatusBadRequest)
-            return
-        }
-        id := parts[2]
-
-        var in tryClaimIn
-        if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-            http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
-            return
-        }
-        if in.AgentID == "" {
-            http.Error(w, "agent_id required", http.StatusBadRequest)
-            return
-        }
-        ttl := ttlOrDefault(in.TTLSec)
-
-        // 1) 상태가 queued 인지 먼저 확인
-        var st task.TaskState
-        if err := d.GetJSON(task.KeyState(id), &st, 2*time.Second); err != nil || st.ID == "" {
-            http.Error(w, "task not found", http.StatusNotFound)
-            return
-        }
-        if st.Status != task.StatusQueued {
-            // 이미 누가 들고 있거나 끝난 거
-            _ = json.NewEncoder(w).Encode(leaseOut{OK: false})
-            return
-        }
-
-        // 2) DHT CAS 로 리스 선점
-        
-                nonce, err := task.Claim(d, id, in.AgentID, ttl)
-        if err != nil {
-            // 다른 에이전트가 거의 동시에 잡은 케이스
-            _ = json.NewEncoder(w).Encode(leaseOut{OK: false})
-            return
-        }
-
-        // 3) 다시 읽어서 진짜로 내가 쓴 리스인지 확인 
-        var le task.Lease
-        if err := d.GetJSON(task.KeyLease(id), &le, 2*time.Second); err != nil {
-            _ = json.NewEncoder(w).Encode(leaseOut{OK: false})
-            return
-        }
-        if le.Owner != in.AgentID || le.Nonce != nonce {
-            // 같은 타이밍에 다른 에이전트가 이겨버린 상황 → 실패로 돌려서 중복 실행 막음
-            _ = json.NewEncoder(w).Encode(leaseOut{OK: false})
-            return
-        }
-
-        // 4) 상태를 assigned/running 으로 올려주기
-        now := time.Now().UTC()
-        st.Status = task.StatusAssigned
-        st.AssignedTo = in.AgentID
-        st.UpdatedAt = now
-        if st.StartedAt == nil {
-            st.StartedAt = &now
-        }
-        st.Version++
-        _ = d.PutJSON(task.KeyState(id), st)
-
-        w.Header().Set("Content-Type", "application/json")
-        _ = json.NewEncoder(w).Encode(leaseOut{OK: true, Lease: le})
-    }
-}
-
-
-func heartbeatHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
+func tryClaimHandler(d *dhtnode.Node, store demand.Store, ns string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireAuth(r) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-		if len(parts) != 4 || parts[0] != "api" || parts[1] != "tasks" || parts[3] != "heartbeat" {
+		if len(parts) != 4 || parts[0] != "api" || parts[1] != "tasks" || parts[3] != "try-claim" {
 			http.Error(w, "bad path", http.StatusBadRequest)
 			return
 		}
 		id := parts[2]
 
-		var in hbIn
+		var in tryClaimIn
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		if in.AgentID == "" {
+			http.Error(w, "agent_id required", http.StatusBadRequest)
+			return
+		}
 		ttl := ttlOrDefault(in.TTLSec)
 
-		var cur task.Lease
-		if err := d.GetJSON(task.KeyLease(id), &cur, 2*time.Second); err != nil || cur.Owner == "" {
-			http.Error(w, "no lease", http.StatusNotFound)
-			return
-		}
-		if cur.Owner != in.AgentID || cur.Nonce != in.Nonce {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
+		lease, err := store.TryClaim(r.Context(), id, in.AgentID, ttl)
+if err != nil {
+    // manifest가 없다고 거절하지 말고 계속 진행
+    if errors.Is(err, demand.ErrLeaseConflict) {
+        _ = json.NewEncoder(w).Encode(leaseOut{OK: false})
+        return
+    }
+    if errors.Is(err, demand.ErrJobNotFound) {
+        http.Error(w, "not found", http.StatusNotFound)
+        return
+    }
 
-		cur.Expires = time.Now().UTC().Add(ttl)
-		cur.Version++
+    // ErrNoManifest는 무시 (noop manifest 허용)
+    if !errors.Is(err, demand.ErrNoManifest) {
+        http.Error(w, "store error: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+}
 
-		if err := d.PutJSON(task.KeyLease(id), cur); err != nil {
-			http.Error(w, "store err: "+err.Error(), http.StatusInternalServerError)
-			return
+		// DHT 상태도 맞춰주기
+		now := time.Now().UTC()
+		var st task.TaskState
+		_ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
+		st.ID = id
+		st.Status = task.StatusAssigned
+		st.AssignedTo = in.AgentID
+		st.UpdatedAt = now
+		if st.StartedAt == nil {
+			st.StartedAt = &now
 		}
+		st.Version++
+		_ = d.PutJSON(task.KeyState(id), st)
+		_ = d.PutJSON(task.KeyLease(id), task.Lease{
+			Owner:   in.AgentID,
+			Expires: lease.ExpireAt,
+			Version: int64(lease.FencingToken),
+		})
 
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(leaseOut{OK: true, Lease: cur})
+		_ = json.NewEncoder(w).Encode(leaseOut{
+			OK: true,
+			Lease: task.Lease{
+				Owner:   in.AgentID,
+				Expires: lease.ExpireAt,
+				Version: int64(lease.FencingToken),
+			},
+		})
 	}
 }
 
@@ -643,10 +616,10 @@ func releaseHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 			return
 		}
 
-		 _ = d.DelJSON(task.KeyLease(id))
+		_ = d.DelJSON(task.KeyLease(id))
 		var st task.TaskState
 		_ = d.GetJSON(task.KeyState(id), &st, 2*time.Second)
-		  if st.ID != "" && (st.AssignedTo == in.AgentID || st.Status == task.StatusAssigned || st.Status == task.StatusRunning) {
+		if st.ID != "" && (st.AssignedTo == in.AgentID || st.Status == task.StatusAssigned || st.Status == task.StatusRunning) {
 			st.Status = task.StatusQueued
 			st.AssignedTo = ""
 			st.UpdatedAt = time.Now().UTC()
@@ -659,35 +632,52 @@ func releaseHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
 	}
 }
 
-func listTasksHandler(d *dhtnode.Node, ns string) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        if !requireAuth(r) {
-            http.Error(w, "unauthorized", http.StatusUnauthorized)
-            return
-        }
-        if r.Method != http.MethodGet {
-            http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-            return
-        }
-        var idx task.TaskIndex
-        if err := d.GetJSON(task.KeyIndex(ns), &idx, 2*time.Second); err != nil {
-            writeJSON(w, http.StatusOK, []any{})
-            return
-        }
-        out := make([]map[string]any, 0, len(idx.IDs))
-        for _, id := range idx.IDs {
-            var st task.TaskState
-            _ = d.GetJSON(task.KeyState(id), &st, 1*time.Second)
-            out = append(out, map[string]any{
-                "id":     id,
-                "status": st.Status,
-                "owner":  st.AssignedTo,
-                "ver":    st.Version,
-                "updated_at": st.UpdatedAt,
-            })
-        }
-        writeJSON(w, http.StatusOK, out)
-    }
+func listTasksHandler(store demand.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireAuth(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		limit := 100
+		offset := 0
+		if v := r.URL.Query().Get("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				limit = n
+			}
+		}
+		if v := r.URL.Query().Get("offset"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				offset = n
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+
+		jobs, err := store.ListPaged(ctx, limit, offset)
+		if err != nil {
+			http.Error(w, "db list failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		out := make([]map[string]any, 0, len(jobs))
+		for _, j := range jobs {
+			out = append(out, map[string]any{
+				"id":          j.ID,
+				"status":      j.Status,
+				"image":       j.Image,
+				"command":     j.Command,
+				"created_at":  j.CreatedAt,
+				"retry_count": j.RetryCount,
+			})
+		}
+		writeJSON(w, http.StatusOK, out)
+	}
 }
 
 func agentManifestHandler(d *dhtnode.Node) http.HandlerFunc {
@@ -736,46 +726,34 @@ func agentManifestHandler(d *dhtnode.Node) http.HandlerFunc {
 }
 
 func validateAgentToken(token, taskID string) bool {
-	// TODO: Control이 발급/검증하는 HMAC 또는 Ed25519 서명 토큰으로 교체
 	return len(token) > 10 && strings.Contains(token, taskID)
 }
 
-func mountHTTP(d *dhtnode.Node, ns string, enqueue func(string)) *http.ServeMux {
+func mountHTTP(d *dhtnode.Node, store demand.Store, ns string, enqueue func(string)) *http.ServeMux {
 	mux := http.NewServeMux()
-mux.HandleFunc("/api/health", healthHandler)
-    // /api/tasks: GET(목록) / POST(생성) 동시 지원
-    mux.HandleFunc("/api/tasks", func(w http.ResponseWriter, r *http.Request) {
-        if r.Method == http.MethodGet {
-            listTasksHandler(d, ns).ServeHTTP(w, r)
-            return
-        }
-        if r.Method == http.MethodPost {
-            createTaskHandler(d, ns).ServeHTTP(w, r)
-            return
-        }
-        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-    })
-  
-     mux.HandleFunc("/internal/tasks/", func(w http.ResponseWriter, r *http.Request) {
-        if strings.HasSuffix(r.URL.Path, "/lease") {
-            debugLeaseHandler(d, ns).ServeHTTP(w, r); return
-        }
-        if strings.HasSuffix(r.URL.Path, "/force-requeue") {
-            forceRequeueHandler(d, ns, enqueue).ServeHTTP(w, r); return
-        }
-        http.NotFound(w, r)
-    })
-  
+
+	mux.HandleFunc("/api/health", healthHandler)
+
+	mux.HandleFunc("/api/tasks", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			listTasksHandler(store).ServeHTTP(w, r)
+			return
+		}
+		if r.Method == http.MethodPost {
+			createTaskHandler(d, store, ns, enqueue).ServeHTTP(w, r)
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	})
 
 	mux.Handle("/api/tasks/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 		if r.Method == http.MethodPost {
 			if strings.HasSuffix(r.URL.Path, "/try-claim") {
-				tryClaimHandler(d, ns).ServeHTTP(w, r)
+				tryClaimHandler(d, store, ns).ServeHTTP(w, r)
 				return
 			}
 			if strings.HasSuffix(r.URL.Path, "/heartbeat") {
-				heartbeatHandler(d, ns).ServeHTTP(w, r)
+				heartbeatHandler(d, store, ns).ServeHTTP(w, r)
 				return
 			}
 			if strings.HasSuffix(r.URL.Path, "/release") {
@@ -783,51 +761,154 @@ mux.HandleFunc("/api/health", healthHandler)
 				return
 			}
 		}
-
 		if strings.HasSuffix(r.URL.Path, "/logs") {
 			logsHandler(d).ServeHTTP(w, r)
 			return
 		}
-		getTaskHandler(d).ServeHTTP(w, r)
+		getTaskHandler(store, d).ServeHTTP(w, r)
 	}))
+
+	mux.Handle("/api/stats/tasks", statsHandler(store))
+
 	mux.Handle("/jobs/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/manifest") {
-			manifestHandler(d, enqueue).ServeHTTP(w, r)
+			manifestHandler(d, store, enqueue).ServeHTTP(w, r)
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/finish") {
-			finishHandler(d, ns).ServeHTTP(w, r)
+			finishHandler(d, store, ns).ServeHTTP(w, r)
 			return
 		}
 		http.NotFound(w, r)
 	}))
 
+ mux.Handle("/internal/tasks/",   debugLeaseHandler(d, ns))
+    mux.Handle("/internal/requeue/", forceRequeueHandler(d, ns, enqueue))
 	return mux
 }
-func forceRequeueHandler(d *dhtnode.Node, ns string, enqueue func(string)) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        if !requireAuth(r) { http.Error(w, "unauthorized", http.StatusUnauthorized); return }
-        if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
-        id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/internal/tasks/"), "/force-requeue")
-        now := time.Now().UTC()
-        var st task.TaskState
-        if err := d.GetJSON(task.KeyState(id), &st, 2*time.Second); err != nil || st.ID == "" {
-            http.Error(w, "state not found", http.StatusNotFound); return
-        }
-        // lease 제거 + queued 복귀
-        _ = d.DelJSON(task.KeyLease(id))
-        st.Status = task.StatusQueued
-        st.AssignedTo = ""
-        st.UpdatedAt = now
-        st.Version++
-        if err := d.PutJSON(task.KeyState(id), st); err != nil {
-            http.Error(w, "put state failed", http.StatusInternalServerError); return
-        }
-        enqueue(id)
-        w.WriteHeader(http.StatusNoContent)
-    }
+
+func statsHandler(store demand.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireAuth(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+
+		m, err := store.CountByStatus(ctx)
+		if err != nil {
+			http.Error(w, "count failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		out := map[string]any{
+			"queued":    m[demand.StatusQueued],
+			"assigned":  m[demand.StatusAssigned],
+			"running":   m[demand.StatusRunning],
+			"succeeded": m[demand.StatusSucceeded],
+			"failed":    m[demand.StatusFailed],
+		}
+		writeJSON(w, http.StatusOK, out)
+	}
 }
-// 유효성 검증
+
+func heartbeatHandler(d *dhtnode.Node, store demand.Store, ns string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireAuth(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if len(parts) != 4 || parts[0] != "api" || parts[1] != "tasks" || parts[3] != "heartbeat" {
+			http.Error(w, "bad path", http.StatusBadRequest)
+			return
+		}
+		id := parts[2]
+
+		var in hbIn
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		ttl := ttlOrDefault(in.TTLSec)
+
+		var token uint64
+		if in.LeaseVersion > 0 {
+			token = uint64(in.LeaseVersion)
+		} else {
+			tokenStr := strings.TrimSpace(in.Nonce)
+			if tokenStr == "" {
+				tokenStr = r.Header.Get("X-Lease-Token")
+			}
+			if tokenStr != "" {
+				if v, err := strconv.ParseUint(tokenStr, 10, 64); err == nil {
+					token = v
+				}
+			}
+		}
+
+		if token == 0 {
+			http.Error(w, "missing lease token", http.StatusBadRequest)
+			return
+		}
+
+		if err := store.Heartbeat(r.Context(), id, in.AgentID, token, ttl); err != nil {
+			http.Error(w, "heartbeat failed: "+err.Error(), http.StatusConflict)
+			return
+		}
+
+		var cur task.Lease
+		_ = d.GetJSON(task.KeyLease(id), &cur, 2*time.Second)
+		cur.Owner = in.AgentID
+		cur.Expires = time.Now().UTC().Add(ttl)
+		cur.Version++
+		_ = d.PutJSON(task.KeyLease(id), cur)
+
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	}
+}
+
+func forceRequeueHandler(d *dhtnode.Node, ns string, enqueue func(string)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireAuth(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		   id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/internal/requeue/"), "/force-requeue")
+
+		now := time.Now().UTC()
+		var st task.TaskState
+		if err := d.GetJSON(task.KeyState(id), &st, 2*time.Second); err != nil || st.ID == "" {
+			http.Error(w, "state not found", http.StatusNotFound)
+			return
+		}
+		_ = d.DelJSON(task.KeyLease(id))
+		st.Status = task.StatusQueued
+		st.AssignedTo = ""
+		st.UpdatedAt = now
+		st.Version++
+		if err := d.PutJSON(task.KeyState(id), st); err != nil {
+			http.Error(w, "put state failed", http.StatusInternalServerError)
+			return
+		}
+		enqueue(id)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func providerIDs(in []providerDTO) []string {
+	out := make([]string, 0, len(in))
+	for _, p := range in {
+		out = append(out, p.PeerID)
+	}
+	return out
+}
+
 func validateProvider(p providerDTO) error {
 	if p.PeerID == "" {
 		return fmt.Errorf("missing peer_id")
@@ -859,29 +940,34 @@ func validateTransports(ts []string) error {
 }
 
 func announceAds(ctx context.Context, d *dhtnode.Node, ns, id string, man *task.Manifest, ttl time.Duration) {
-	// 만료 시각(UTC)
-	exp := time.Now().UTC().Add(ttl)
+    exp := time.Now().UTC().Add(ttl)
 
-	// 1) TASK_AD
-	ad := taskAd{
-		JobID:     id,
-		Namespace: ns,
-		Topic:     man.Rendezvous,
-		Exp:       exp,
-		// Sig:    TODO: 서명 붙이기
-	}
-	if err := d.PutJSON(keyTaskAd(ns, id), ad); err != nil {
+    // 환경변수에서 PUBLIC URL 읽기
+    durl := os.Getenv("CONTROL_PUBLIC_URL")
+    if durl == "" {
+        // 기본값은 로컬 개발 환경용
+        durl = fmt.Sprintf("http://127.0.0.1:%s", os.Getenv("CONTROL_HTTP_PORT"))
+        if durl == "http://127.0.0.1:" { // 포트도 없으면 완전 기본값
+            durl = "http://127.0.0.1:8080"
+        }
+    }
 
-		// log.Printf("[ad] task_ad put err: %v", err)
-	}
+    ad := taskAd{
+        JobID:     id,
+        Namespace: ns,
+        Topic:     man.Rendezvous,
+         DemandURL: durl,
+ Exp:       exp,
+    }
 
-	
-	m := manifestMirror{
-      Providers: man.Providers,
-      Exp:       exp,
-  }
-  if err := d.PutJSON(keyP2PManifestMirror(id), m); err != nil {
-	
-		// log.Printf("[ad] p2p manifest mirror put err: %v", err)
-	}
+    if err := d.PutJSON(keyTaskAd(ns, id), ad); err != nil {
+        log.Printf("[announce] failed to put taskAd for %s: %v", id, err)
+    }
+
+    m := manifestMirror{
+        Providers: man.Providers,
+        Exp:       exp,
+    }
+    _ = d.PutJSON(keyP2PManifestMirror(id), m)
 }
+

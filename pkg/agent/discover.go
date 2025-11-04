@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-
+	"log"
 	dhtnode "github.com/Team-Gurumi/MC/pkg/dht"
 	task "github.com/Team-Gurumi/MC/pkg/task"
 )
@@ -73,7 +73,7 @@ func filterProviders(ps []task.Provider) []task.Provider {
 	return out
 }
 
-func (dv *Discoverer) handleJob(ctx context.Context, id string, onCandidate func(jobID string, providers []task.Provider)) {
+func (dv *Discoverer) handleJob(ctx context.Context, id string, onCandidate func(jobID string, providers []task.Provider, demandURL string)) {
 	if id == "" {
 		return
 	}
@@ -82,6 +82,7 @@ func (dv *Discoverer) handleJob(ctx context.Context, id string, onCandidate func
     if err := dv.d.GetJSON(task.KeyState(id), &st, 1*time.Second); err == nil {
         if st.Status != task.StatusQueued {
             // 다른 에이전트가 이미 들고 있으면 안 해도 됨
+            log.Printf("[agent] skip job=%s because state=%s", id, st.Status)
             return
         }
     }
@@ -91,27 +92,31 @@ func (dv *Discoverer) handleJob(ctx context.Context, id string, onCandidate func
             return
         }
     }
-	//TASK_AD 참고 — rendezvous 필터 등
-	_, _ = dv.readTaskAd(ctx, id)
+	ad, err := dv.readTaskAd(ctx, id)
+if err != nil {
+    log.Printf("[agent] skip job=%s: cannot read taskAd: %v", id, err)
+    return
+}
 
 	
 	 m, err := dv.readManifestMirror(ctx, id)
   if err != nil {
-  
+   log.Printf("[agent] skip job=%s: manifest mirror not found: %v", id, err)
        return
    }
    providers := filterProviders(m.Providers)
 
-   if len(providers) == 0 {
-       onCandidate(id, nil)
-   } else {
-       onCandidate(id, providers)
-   }
+ if len(providers) == 0 {
+    onCandidate(id, nil, ad.DemandURL)
+} else {
+    onCandidate(id, providers, ad.DemandURL)
+}
+
 	
 	dv.seen.Store(id, time.Now())
 }
 
-func (dv *Discoverer) Run(ctx context.Context, listIDs func() []string, onCandidate func(jobID string, providers []task.Provider)) {
+func (dv *Discoverer) Run(ctx context.Context, listIDs func() []string, onCandidate func(jobID string, providers []task.Provider, demandURL string)) {
 	ticker := time.NewTicker(dv.interval)
 	defer ticker.Stop()
 

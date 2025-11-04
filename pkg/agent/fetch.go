@@ -82,6 +82,17 @@ func FetchFromProvider(ctx context.Context, d *dhtnode.Node, rootCID string, pv 
 	if err := os.Rename(tmp, final); err != nil {
 		return nil, err
 	}
+	 if rootCID != "input" {
+        inPath := filepath.Join(dir, "input")
+        _ = os.RemoveAll(inPath)
+        // 심볼릭 링크 시도, 실패 시 하드카피
+        if err := os.Symlink(rootCID, inPath); err != nil {
+            // 심볼릭 링크가 막혀있거나 윈도우 등인 경우 복사
+            if err2 := copyFile(final, inPath); err2 != nil {
+                // best-effort: 실패해도 페치 자체는 성공으로 둔다
+            }
+        }
+    }
 	return &FetchResult{LocalPath: final, Bytes: nw}, nil
 }
 
@@ -100,3 +111,15 @@ func FetchAny(ctx context.Context, d *dhtnode.Node, rootCID string, providers []
 	}
 	return nil, lastErr
 }
+
+func copyFile(src, dst string) error {
+    in, err := os.Open(src)
+    if err != nil { return err }
+    defer in.Close()
+    out, err := os.Create(dst)
+    if err != nil { return err }
+    defer func(){ _ = out.Close() }()
+    if _, err := io.Copy(out, in); err != nil { return err }
+    return out.Sync()
+}
+
