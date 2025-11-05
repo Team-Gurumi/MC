@@ -18,7 +18,7 @@ func main() {
 
 	boots := []string{
 		// 컨트롤 로그에서 나온 멀티어드레스 붙이세요
-		"/ip4/127.0.0.1/tcp/44389/p2p/12D3KooWBViteBK8hFKSxeYPc5L2bkAKre8t3BtoTs9jg5Y7cvtb",
+		"/ip4/127.0.0.1/udp/37128/quic-v1/p2p/12D3KooWCfRjdaxGBQSE4SFarh9z5hqzBthRMisAeK8A1sufGbdW",
 	}
 
 	// 레포에서 seeder가 쓰는 그대로
@@ -27,7 +27,8 @@ func main() {
 		log.Fatalf("dht new node: %v", err)
 	}
 
-	key := "ns/" + ns + "/task/index"
+key := "task/job-1762200160/state"
+
 
 	var out map[string]any
 

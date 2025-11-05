@@ -75,13 +75,15 @@ func main() {
 	dv := agent.NewDiscoverer(d, *ns, *discEvery)
 	listIDs := func() []string { return agent.ListFromIndex(d, *ns) }
 
-	// 잡 후보 발견 시 호출
 	onCandidate := func(jobID string, providers []task.Provider, demandURL string) {
+    // 1) 이 잡에 대해 사용할 베이스 URL을 정한다.
+    base := *controlURL
     if demandURL != "" {
-        claim.BaseURL = demandURL
-    } else {
-        claim.BaseURL = *controlURL
+        base = demandURL
     }
+    // claim 이랑 finish 둘 다 같은 베이스를 쓰도록 맞춘다.
+    claim.BaseURL = base
+    finish.BaseURL = base
 
 		// 1) try-claim
 		ctx2, cancel := context.WithTimeout(context.Background(), 4*time.Second)

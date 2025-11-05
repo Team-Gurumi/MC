@@ -100,16 +100,20 @@ func (s *PGStore) AttachManifest(ctx context.Context, id string, m Manifest) err
 // 4) try-claim
 func (s *PGStore) TryClaim(ctx context.Context, id string, agentID string, ttl time.Duration) (*Lease, error) {
 	row := s.db.QueryRowContext(ctx, `
-		UPDATE demand_jobs
-		   SET lease_agent      = $2,
-		       lease_expires_at = now() + ($3 || ' seconds')::interval,
-		       lease_token      = lease_token + 1,
-		       status           = 'assigned'
- WHERE id = $1
-         AND (manifest_root_cid IS NOT NULL OR manifest_root_cid = 'noop')
-		   AND (lease_expires_at IS NULL OR lease_expires_at < now())
-		RETURNING lease_token, lease_expires_at
-	`, id, agentID, int(ttl.Seconds()))
+	UPDATE demand_jobs
+	   SET lease_agent      = $2,
+	       lease_expires_at = now() + ($3 || ' seconds')::interval,
+	       lease_token      = COALESCE(lease_token, 0) + 1,
+	       status           = 'assigned'
+	 WHERE id = $1
+	   AND (
+	       manifest_root_cid = 'noop'
+	       OR (manifest_root_cid IS NOT NULL AND manifest_root_cid != '')
+	   )
+	   AND (lease_expires_at IS NULL OR lease_expires_at < now())
+	 RETURNING lease_token, lease_expires_at
+`, id, agentID, int(ttl.Seconds()))
+
 
 	var (
 		token    int64
@@ -172,7 +176,6 @@ func (s *PGStore) Heartbeat(ctx context.Context, id string, agentID string, toke
 	}
 	return nil
 }
-
 // 6) finish
 func (s *PGStore) Finish(
 	ctx context.Context,
@@ -197,26 +200,22 @@ func (s *PGStore) Finish(
 		status = "succeeded"
 	}
 
-	res, err := s.db.ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, `
 		UPDATE demand_jobs
-		   SET status           = $5,
-		       result_root_cid  = $6,
-		       artifacts        = $7,
-		       metrics          = $8,
+		   SET status           = $4,
+		       result_root_cid  = $5,
+		       artifacts        = $6,
+		       metrics          = $7,
 		       lease_agent      = NULL,
 		       lease_expires_at = NULL
 		 WHERE id = $1
-		   AND lease_agent = $2
-		   AND lease_token = $3
+		   AND (lease_agent = $2 OR lease_agent IS NULL)
+		   AND lease_token <= $3
 	`, id, agentID, int64(token), status, resultCID, artsJSON, metricsJSON)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrBadToken
-	}
-	return nil
+	return err
 }
+
+
 
 // 7) 만료된 lease 목록
 func (s *PGStore) ListExpiredLeases(ctx context.Context, now time.Time) ([]string, error) {

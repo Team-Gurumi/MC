@@ -101,7 +101,6 @@ if err != nil {
 	
 	 m, err := dv.readManifestMirror(ctx, id)
   if err != nil {
-   log.Printf("[agent] skip job=%s: manifest mirror not found: %v", id, err)
        return
    }
    providers := filterProviders(m.Providers)

@@ -42,15 +42,21 @@ func (c *FinishClient) post(ctx context.Context, path string, in any, agentID st
 }
 
 
-func (c *FinishClient) Report(ctx context.Context, jobID string, status string, metrics map[string]any, resultCID string, artifacts []string, errMsg string, agentID string,  
-	leaseToken int64,) error {
-	body := map[string]any{
-		"status":           status,
-		"metrics":          metrics,
-		"result_root_cid":  resultCID,
-		"artifacts":        artifacts,
-	}
-	if errMsg != "" { body["error"] = errMsg }
-	return c.post(ctx, "/jobs/"+jobID+"/finish", body, agentID, leaseToken)
+func (c *FinishClient) Report(ctx context.Context, jobID string, status string,
+    metrics map[string]any, resultCID string, artifacts []string, errMsg string,
+    agentID string, leaseToken int64,) error {
+
+    body := map[string]any{
+        "status":          status,
+        "metrics":         metrics,
+        "result_root_cid": resultCID,
+        "artifacts":       artifacts,
+    }
+    if errMsg != "" {
+        body["error"] = errMsg
+    }
+
+    return c.post(ctx, "/jobs/"+jobID+"/finish", body, agentID, leaseToken)
+
 }
-	
+

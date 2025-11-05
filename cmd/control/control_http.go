@@ -781,7 +781,13 @@ func mountHTTP(d *dhtnode.Node, store demand.Store, ns string, enqueue func(stri
 		}
 		http.NotFound(w, r)
 	}))
-
+mux.Handle("/api/jobs/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    if strings.HasSuffix(r.URL.Path, "/finish") {
+        finishHandler(d, store, ns).ServeHTTP(w, r)
+        return
+    }
+    http.NotFound(w, r)
+}))
  mux.Handle("/internal/tasks/",   debugLeaseHandler(d, ns))
     mux.Handle("/internal/requeue/", forceRequeueHandler(d, ns, enqueue))
 	return mux

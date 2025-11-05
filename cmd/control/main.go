@@ -175,60 +175,37 @@ func restoreJobsFromDemand(ctx context.Context, store demand.Store, d *dhtnode.N
 const maxRetry = 5
 
 func requeueLoop(ctx context.Context, store demand.Store, d *dhtnode.Node, ns string, mgr *AnnounceManager) {
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
+    ticker := time.NewTicker(500 * time.Millisecond)
+    defer ticker.Stop()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			now := time.Now().UTC()
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-ticker.C:
+            now := time.Now().UTC()
 
-			expired, err := store.ListExpiredLeases(ctx, now)
-			if err == nil {
-				for _, id := range expired {
-					if err := store.SetStatusQueued(ctx, id); err != nil {
-						log.Printf("[requeue] expired -> queued err id=%s: %v", id, err)
-						continue
-					}
-					   // 2) DHT lease 제거
- _ = d.DelJSON(task.KeyLease(id))
-   // 3) DHT state를 queued로
-   updateDHTStateQueued(d, id, now)
-   // 4) 재광고
-   mgr.Enqueue(id)
-				}
-			}
+            // 만료된 지 3초 이상 지난 작업만 재큐잉한다
+            expired, err := store.ListExpiredLeases(ctx, now.Add(-3*time.Second))
+            if err != nil {
+                log.Printf("[requeue] list expired failed: %v", err)
+                continue
+            }
 
-			cutoff := now.Add(-5 * time.Second)
-			missing, err := store.ListManifestMissingSince(ctx, cutoff)
-			if err == nil {
-				for _, id := range missing {
-					job, jerr := store.GetJob(ctx, id)
-					if jerr == nil && job != nil && job.RetryCount >= maxRetry {
-						log.Printf("[requeue] skip id=%s retry_count=%d >= %d", id, job.RetryCount, maxRetry)
-						continue
-					}
-
-					if err := store.SetStatusQueued(ctx, id); err != nil {
-						log.Printf("[requeue] manifest-missing -> queued err id=%s: %v", id, err)
-						continue
-					}
-					
-// 1) DHT lease를 없애고
-_ = d.DelJSON(task.KeyLease(id))
-
-// 2) 상태를 queued로 덮고
-updateDHTStateQueued(d, id, now)
-
-// 3) 다시 광고
-mgr.Enqueue(id)
-				}
-			}
-		}
-	}
+            for _, id := range expired {
+                if err := store.SetStatusQueued(ctx, id); err != nil {
+                    log.Printf("[requeue] expired -> queued err id=%s: %v", id, err)
+                    continue
+                }
+                // DHT에 있는 lease/state도 정리
+                _ = d.DelJSON(task.KeyLease(id))
+                updateDHTStateQueued(d, id, now)
+                mgr.Enqueue(id)
+            }
+        }
+    }
 }
+
 
 func updateDHTStateQueued(d *dhtnode.Node, id string, now time.Time) {
 	var st task.TaskState
