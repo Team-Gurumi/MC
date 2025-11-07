@@ -21,14 +21,31 @@ func NewDiscoverer(d *dhtnode.Node, ns string, interval time.Duration) *Discover
 	return &Discoverer{d: d, ns: ns, interval: interval}
 }
 
-// 인덱스에서 후보 id 목록 조회(간단 버전)
+// discover.go
 func ListFromIndex(d *dhtnode.Node, ns string) []string {
-	var idx task.TaskIndex
-	if err := d.GetJSON(task.KeyIndex(ns), &idx, 3*time.Second); err != nil {
-		return nil
+	ids := make([]string, 0, 256)
+
+	// 새로 만든 샤드 전부 훑기
+	for shard := 0; shard < task.TaskIndexShardCount; shard++ {
+		key := task.KeyIndexShard(ns, shard)
+
+		var idx task.TaskIndex
+		if err := d.GetJSON(key, &idx, 3*time.Second); err != nil {
+            // 이 샤드는 아직 없을 수 있으니 그냥 넘어감
+			continue
+		}
+
+		ids = append(ids, idx.IDs...)
 	}
-	return idx.IDs
+
+	// var legacy task.TaskIndex
+	// if err := d.GetJSON(task.KeyIndex(ns), &legacy, 3*time.Second); err == nil {
+	//     ids = append(ids, legacy.IDs...)
+	// }
+
+	return ids
 }
+
 
 func (dv *Discoverer) readTaskAd(ctx context.Context, id string) (*TaskAd, error) {
 	var ad TaskAd
@@ -81,8 +98,7 @@ func (dv *Discoverer) handleJob(ctx context.Context, id string, onCandidate func
     var st task.TaskState
     if err := dv.d.GetJSON(task.KeyState(id), &st, 1*time.Second); err == nil {
         if st.Status != task.StatusQueued {
-            // 다른 에이전트가 이미 들고 있으면 안 해도 됨
-            log.Printf("[agent] skip job=%s because state=%s", id, st.Status)
+
             return
         }
     }

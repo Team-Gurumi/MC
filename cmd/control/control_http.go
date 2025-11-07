@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 	"log"
+	mrand "math/rand"
 	"github.com/Team-Gurumi/MC/pkg/demand"
 	dhtnode "github.com/Team-Gurumi/MC/pkg/dht"
 	"github.com/Team-Gurumi/MC/pkg/task"
@@ -153,7 +154,8 @@ func finishHandler(d *dhtnode.Node, store demand.Store, ns string) http.HandlerF
 		st.Version++
 		_ = d.PutJSON(task.KeyState(id), st)
 		_ = d.DelJSON(task.KeyLease(id))
-
+_ = d.DelJSON(keyTaskAd(ns, id))      // ad/<ns>/task/<id>
+		_ = d.DelJSON(keyP2PManifestMirror(id)) // p2p/<id>/manifest
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -220,25 +222,29 @@ func requireAuth(r *http.Request) bool {
 	return got == ("Bearer " + want)
 }
 
+// DHT 인덱스를 샤드 중 하나에만 기록
 func addToIndex(d *dhtnode.Node, ns, id string) error {
-	var idx task.TaskIndex
-	key := task.KeyIndex(ns) //
-	if err := d.GetJSON(key, &idx, 2*time.Second); err != nil {
+	// 0 ~ TaskIndexShardCount-1 중 하나 선택
+	shard := mrand.Intn(task.TaskIndexShardCount)
+	key := task.KeyIndexShard(ns, shard)
 
-		idx = task.TaskIndex{IDs: []string{id}, UpdatedAt: time.Now(), Version: 1}
-		return d.PutJSON(key, idx)
-	}
-	for _, e := range idx.IDs {
-		if e == id {
+	var idx task.TaskIndex
+	// 이 샤드는 아직 없을 수 있으니 에러 무시
+	_ = d.GetJSON(key, &idx, 2*time.Second)
+
+	// 중복 방지
+	for _, x := range idx.IDs {
+		if x == id {
 			return nil
 		}
 	}
+
 	idx.IDs = append(idx.IDs, id)
-	idx.UpdatedAt = time.Now()
+	idx.UpdatedAt = time.Now().UTC()
 	idx.Version++
+
 	return d.PutJSON(key, idx)
 }
-
 // ===== /api/tasks =====
 
 type CreateTaskReq struct {
@@ -575,6 +581,8 @@ if err != nil {
 			Expires: lease.ExpireAt,
 			Version: int64(lease.FencingToken),
 		})
+log.Printf(`{"event":"reassigned","timestamp":"%s","job_id":"%s","agent_id":"%s"}`,
+    time.Now().UTC().Format(time.RFC3339Nano), id, in.AgentID)
 
 		_ = json.NewEncoder(w).Encode(leaseOut{
 			OK: true,

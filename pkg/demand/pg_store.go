@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	_ "github.com/lib/pq" 
+	_ "github.com/lib/pq"
 )
 
 type PGStore struct {
@@ -56,10 +56,9 @@ func (s *PGStore) GetJob(ctx context.Context, id string) (*DBJob, error) {
 	`, id)
 
 	var (
-		dbj      DBJob
-		cmdJSON  []byte
-		status   string
-		created  time.Time
+		dbj     DBJob
+		cmdJSON []byte
+		status  string
 	)
 	if err := row.Scan(&dbj.ID, &dbj.Image, &cmdJSON, &status, &dbj.CreatedAt, &dbj.RetryCount); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -68,14 +67,13 @@ func (s *PGStore) GetJob(ctx context.Context, id string) (*DBJob, error) {
 		return nil, err
 	}
 	dbj.Status = JobStatus(status)
-	dbj.CreatedAt = created
 	if len(cmdJSON) > 0 && string(cmdJSON) != "null" {
 		_ = json.Unmarshal(cmdJSON, &dbj.Command)
 	}
 	return &dbj, nil
 }
 
-// 3) manifest
+// 3) manifest 붙이기
 func (s *PGStore) AttachManifest(ctx context.Context, id string, m Manifest) error {
 	provJSON, err := toJSON(m.Providers)
 	if err != nil {
@@ -100,20 +98,16 @@ func (s *PGStore) AttachManifest(ctx context.Context, id string, m Manifest) err
 // 4) try-claim
 func (s *PGStore) TryClaim(ctx context.Context, id string, agentID string, ttl time.Duration) (*Lease, error) {
 	row := s.db.QueryRowContext(ctx, `
-	UPDATE demand_jobs
-	   SET lease_agent      = $2,
-	       lease_expires_at = now() + ($3 || ' seconds')::interval,
-	       lease_token      = COALESCE(lease_token, 0) + 1,
-	       status           = 'assigned'
-	 WHERE id = $1
-	   AND (
-	       manifest_root_cid = 'noop'
-	       OR (manifest_root_cid IS NOT NULL AND manifest_root_cid != '')
-	   )
-	   AND (lease_expires_at IS NULL OR lease_expires_at < now())
-	 RETURNING lease_token, lease_expires_at
-`, id, agentID, int(ttl.Seconds()))
-
+		UPDATE demand_jobs
+		   SET lease_agent      = $2,
+		       lease_expires_at = now() + ($3 || ' seconds')::interval,
+		       lease_token      = COALESCE(lease_token, 0) + 1,
+		       status           = 'assigned'
+		 WHERE id = $1
+		   AND status = 'queued'  -- 이미 끝난 잡(succeeded)은 다시 못 잡게
+		   AND (lease_expires_at IS NULL OR lease_expires_at < now())
+		RETURNING lease_token, lease_expires_at
+	`, id, agentID, int(ttl.Seconds()))
 
 	var (
 		token    int64
@@ -121,7 +115,7 @@ func (s *PGStore) TryClaim(ctx context.Context, id string, agentID string, ttl t
 	)
 	if err := row.Scan(&token, &expireAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// 왜 실패했는지 한번 더 본다
+			// 왜 실패했는지 한 번 더 본다
 			j, gerr := s.GetJob(ctx, id)
 			if gerr != nil {
 				return nil, gerr
@@ -129,7 +123,8 @@ func (s *PGStore) TryClaim(ctx context.Context, id string, agentID string, ttl t
 			if j == nil {
 				return nil, ErrJobNotFound
 			}
-			// manifest 없는 경우
+
+			// manifest 없거나 lease가 여전히 유효한 경우를 구분
 			var rootCID sql.NullString
 			var leaseValid bool
 			r2 := s.db.QueryRowContext(ctx, `
@@ -176,6 +171,7 @@ func (s *PGStore) Heartbeat(ctx context.Context, id string, agentID string, toke
 	}
 	return nil
 }
+
 // 6) finish
 func (s *PGStore) Finish(
 	ctx context.Context,
@@ -215,8 +211,6 @@ func (s *PGStore) Finish(
 	return err
 }
 
-
-
 // 7) 만료된 lease 목록
 func (s *PGStore) ListExpiredLeases(ctx context.Context, now time.Time) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `
@@ -242,23 +236,25 @@ func (s *PGStore) ListExpiredLeases(ctx context.Context, now time.Time) ([]strin
 	return ids, nil
 }
 
-// 8) 다시 queued 로
 func (s *PGStore) SetStatusQueued(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `
-		UPDATE demand_jobs
-		   SET status = 'queued',
-		       lease_agent = NULL,
-		       lease_expires_at = NULL,
-		       retry_count = retry_count + 1
-		 WHERE id = $1
-	`, id)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrJobNotFound
-	}
-	return nil
+    res, err := s.db.ExecContext(ctx, `
+        UPDATE demand_jobs
+           SET status = 'queued',
+               lease_agent = NULL,
+               lease_expires_at = NULL,
+               retry_count = retry_count + 1
+         WHERE id = $1
+           AND status IN ('assigned', 'running')
+           AND lease_expires_at IS NOT NULL
+           AND lease_expires_at < now()
+    `, id)
+    if err != nil {
+        return err
+    }
+    if n, _ := res.RowsAffected(); n == 0 {
+        return ErrJobNotFound
+    }
+    return nil
 }
 
 
@@ -292,6 +288,7 @@ func (s *PGStore) ListQueued(ctx context.Context) ([]DBJob, error) {
 	}
 	return out, nil
 }
+
 func (s *PGStore) ListManifestMissingSince(ctx context.Context, cutoff time.Time) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id
@@ -318,7 +315,7 @@ func (s *PGStore) ListManifestMissingSince(ctx context.Context, cutoff time.Time
 
 func (s *PGStore) ListAll(ctx context.Context) ([]DBJob, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, image, command, status, created_at,retry_count
+		SELECT id, image, command, status, created_at, retry_count
 		  FROM demand_jobs
 		  ORDER BY created_at ASC
 	`)
@@ -346,7 +343,6 @@ func (s *PGStore) ListAll(ctx context.Context) ([]DBJob, error) {
 	return out, nil
 }
 
-
 // 페이지 단위 조회
 func (s *PGStore) ListPaged(ctx context.Context, limit, offset int) ([]DBJob, error) {
 	if limit <= 0 {
@@ -360,8 +356,7 @@ func (s *PGStore) ListPaged(ctx context.Context, limit, offset int) ([]DBJob, er
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, image, command, status, created_at,retry_count
-	  FROM demand_jobs
+		SELECT id, image, command, status, created_at, retry_count
 		  FROM demand_jobs
 		 ORDER BY created_at DESC
 		 LIMIT $1 OFFSET $2
@@ -393,7 +388,7 @@ func (s *PGStore) ListPaged(ctx context.Context, limit, offset int) ([]DBJob, er
 // 상태 카운트
 func (s *PGStore) CountByStatus(ctx context.Context) (map[JobStatus]int64, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT status, COUNT(*) 
+		SELECT status, COUNT(*)
 		  FROM demand_jobs
 		 GROUP BY status
 	`)

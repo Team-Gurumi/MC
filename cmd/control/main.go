@@ -197,10 +197,36 @@ func requeueLoop(ctx context.Context, store demand.Store, d *dhtnode.Node, ns st
                     log.Printf("[requeue] expired -> queued err id=%s: %v", id, err)
                     continue
                 }
+                log.Printf(`{"event":"lease_expired","timestamp":"%s","job_id":"%s"}`,
+        time.Now().UTC().Format(time.RFC3339Nano), id)
+
                 // DHT에 있는 lease/state도 정리
                 _ = d.DelJSON(task.KeyLease(id))
                 updateDHTStateQueued(d, id, now)
                 mgr.Enqueue(id)
+            }
+        }
+    }
+}
+// DB에 queued로만 남아 있는 잡들을 주기적으로 다시 DHT에 광고
+func reannounceQueuedLoop(ctx context.Context, store demand.Store, mgr *AnnounceManager) {
+    ticker := time.NewTicker(5 * time.Second) // 주기는 필요하면 줄여
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-ticker.C:
+            // DB에서 아직 queued인 애들 전부 가져옴
+            jobs, err := store.ListQueued(ctx)
+            if err != nil {
+                log.Printf("[reannounce] list queued failed: %v", err)
+                continue
+            }
+            for _, j := range jobs {
+                // 그냥 다시 광고 큐에 넣어주면 AnnounceManager가 DHT에 다시 올림
+                mgr.Enqueue(j.ID)
             }
         }
     }
@@ -278,6 +304,8 @@ func main() {
 
 	restoreJobsFromDemand(ctx, store, node, *ns, mgr)
 	go requeueLoop(ctx, store, node, *ns, mgr)
+	go reannounceQueuedLoop(ctx, store, mgr)
+
 
 	mux := mountHTTP(node, store, *ns, mgr.Enqueue)
 	addr := fmt.Sprintf(":%d", *httpPort)

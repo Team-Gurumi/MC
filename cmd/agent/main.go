@@ -91,7 +91,7 @@ func main() {
 
 		lease, err := claim.TryClaim(ctx2, jobID, agentID, leaseTTL)
 		if err != nil {
-		 log.Printf("[agent] try-claim failed job=%s: %v", jobID, err)
+		
 			return
 		}
 
