@@ -16,7 +16,7 @@ TTL_SEC="${TTL_SEC:-40}"
 # --- 수정됨: 컨트롤 장애 시나리오 변수 ---
 TASK_SLEEP_DURATION="${TASK_SLEEP_DURATION:-30}" # 작업이 실행될 시간 (초)
 RUNTIME_BEFORE_CONTROL_KILL="${RUNTIME_BEFORE_CONTROL_KILL:-45}" # 컨트롤 죽이기 전 대기
-CONTROL_DOWNTIME="${CONTROL_DOWNTIME:-10}" # 컨트롤이 죽어있을 시간
+CONTROL_DOWNTIME="${CONTROL_DOWNTIME:-40}" # 컨트롤이 죽어있을 시간
 POST_RESTART_OBSERVE="${POST_RESTART_OBSERVE:-10}" # 컨트롤 재시작 후 상태 동기화 대기
 
 # 컨테이너 정책
