@@ -1,0 +1,52 @@
++ AGENTS=50
++ TASKS=500
++ KILL_PERCENT=10
++ ./run_fault_tolerance_benchmark.sh
+==> Checking docker image: alpine:latest
+[INFO] using local image alpine:latest
+### BENCH CONFIG
+NS=mc
+CONTROL_URL=http://127.0.0.1:8080
+AGENTS=50
+TASKS=500
+HB_SEC=5
+TTL_SEC=20
+KILL_PERCENT=10
+RUNTIME_BEFORE_KILL=60s
+POST_KILL_OBSERVE=200s
+DOCKER_IMAGE=alpine:latest
+Artifacts: bench_artifacts/20251107-115511
+==> Starting control @ http://127.0.0.1:8080
+==> Using bootstrap: /ip4/127.0.0.1/tcp/44507/p2p/12D3KooWCSP8f8PA6KUaqryC7VtB7YTRW8tYEZzeqBvvujqy95qQ
+==> Spawning 50 agents
+agents started: 50
+==> Submitting 500 tasks
+  submitted: 100
+  submitted: 200
+  submitted: 300
+  submitted: 400
+  submitted: 500
+==> Sleeping 60s
+==> SIGKILL 5/50 agents
+==> Observing 200s
+./run_fault_tolerance_benchmark.sh: 줄 253: 172725 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 253: 172819 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 253: 172894 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 253: 172917 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 253: 173005 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+==> Stopping remaining agents
+==> Running metrics analyzer
+# Benchmark Report (API-based)
+
+- total tasks: 500
+- completed: 500
+- success_rate: 100.0000%
+- status breakdown:
+  - succeeded: 500
+- MTTR p50: 0.0004s  (target ≤ 120s)
+- MTTR p95: 0.0043s  (target ≤ 180s)
+- duplicate execution rate: 1.0000%  (target ≤ 1%)
+- false recall rate: 0.0000%  (target ≤ 0.5%)
+==> Truncating demand_jobs
+TRUNCATE TABLE
+==> DONE. See bench_artifacts/20251107-115511

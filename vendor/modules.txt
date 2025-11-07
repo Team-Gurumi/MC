@@ -111,6 +111,11 @@ github.com/klauspost/cpuid/v2
 github.com/koron/go-ssdp
 github.com/koron/go-ssdp/internal/multicast
 github.com/koron/go-ssdp/internal/ssdplog
+# github.com/lib/pq v1.10.9
+## explicit; go 1.13
+github.com/lib/pq
+github.com/lib/pq/oid
+github.com/lib/pq/scram
 # github.com/libp2p/go-buffer-pool v0.1.0
 ## explicit; go 1.17
 github.com/libp2p/go-buffer-pool

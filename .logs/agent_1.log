@@ -1,0 +1,6 @@
+[dht] detected IPs: [10.240.129.125 192.168.122.1 100.119.53.94 172.17.0.1 127.0.0.1]
+2025/11/05 19:51:26 failed to sufficiently increase receive buffer size (was: 208 kiB, wanted: 7168 kiB, got: 416 kiB). See https://github.com/quic-go/quic-go/wiki/UDP-Buffer-Sizes for details.
+[bootstrap] connect 12D3KooWHWLBJYbPuG1NuvVN29xDWoGKj3Jv9LMsHH9UkWsSeP65: failed to dial: failed to dial 12D3KooWHWLBJYbPuG1NuvVN29xDWoGKj3Jv9LMsHH9UkWsSeP65: all dials failed
+  * [/ip4/127.0.0.1/tcp/35775] dial tcp4 127.0.0.1:35775: connect: connection refused
+2025/11/05 19:51:31 DHT 노드 초기화 실패: no peers in routing table after bootstrap
+exit status 1

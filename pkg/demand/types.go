@@ -8,6 +8,7 @@ type JobMeta struct {
 	Image     string    `json:"image"`
 	Command   []string  `json:"command"`
 	CreatedAt time.Time `json:"createdAt"`
+		RetryCount int
 }
 
 // 현재 상태 (네가 이미 응답에서 보고 있는 필드들)

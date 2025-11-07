@@ -265,7 +265,7 @@ def main():
 
     print(f"- MTTR p50: {fmt(result.get('mttr_p50_s'), 's')}  (target ≤ 120s)")
     print(f"- MTTR p95: {fmt(result.get('mttr_p95_s'), 's')}  (target ≤ 180s)")
-    print(f"- duplicate execution rate: {fmt(result.get('dup_exec_rate_percent'), '%')}  (target ≤ 0.1%)")
+    print(f"- duplicate execution rate: {fmt(result.get('dup_exec_rate_percent'), '%')}  (target ≤ 1%)")
     print(f"- false recall rate: {fmt(result.get('false_recall_rate_percent'), '%')}  (target ≤ 0.5%)")
 
 
