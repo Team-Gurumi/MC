@@ -1,36 +1,45 @@
 # 프로젝트 구조
 
-| 파일 | 설명 |
-| --- | --- |
-| `go.mod`, `go.sum` | Go 모듈 의존성 관리 파일 |
-| `run_*.sh` | 실험 및 벤치마크 실행용 셸 스크립트 (`run_experiments1.sh`, `run_fault_tolerance_benchmark.sh` 등) |
-| `analyze_metrics.py` | 실험 결과 분석용 Python 스크립트 |
-| `agent`, `control`, `seeder` | `cmd/` 폴더의 소스가 컴파일된 실행 바이너리 파일 |
+구조
 
-## `cmd/` — 실행 진입점 (Main Applications)
+team-gurumi/mc/
+├── Makefile # 빌드 및 설치 명령 정의
+├── go.mod / go.sum # Go 모듈 의존성 관리
+├── run_experiments1.sh # 실험 실행 스크립트
+├── run_fault_tolerance_benchmark.sh
+├── analyze_metrics.py # 실험 결과 분석 스크립트
+├── agent / control / seeder # 컴파일된 실행 바이너리
+│
+├── cmd/ # 실행 진입점 (Main Applications)
+│ ├── agent/ # 에이전트 노드 실행 진입점 - 작업 실행·상태 관리
+│ ├── control/ # 컨트롤 서버 실행 진입점 - 중앙 관리 및 API 서버
+│ ├── seeder/ # 시더 노드 실행 진입점 - P2P로 파일 전송
+│ └── dhtget/ # DHT 네트워크 데이터 조회 유틸리티 (디버깅용)
+│
+├── pkg/ # 공통 라이브러리 (Core Packages)
+│ ├── agent/ # 에이전트 로직: 작업 실행, 리스 관리, 상태 보고
+│ ├── dht/ # DHT 노드 및 XOR 라우팅 구현
+│ ├── p2p/ # 피어 간 P2P 통신 프로토콜
+│ ├── task/ # 작업(Task) 데이터 구조 및 자원 점유 로직
+│ ├── demand/ # PostgreSQL 기반 작업(Job) 저장 및 관리
+│ └── seeder/ # 시더 요청 처리 및 데이터 분배 로직
+│
+├── Report/ # 프로젝트 보고서 및 다이어그램
+│ ├── 09-구르미-1차보고서-금채원.pdf
+│ ├── 09-구르미-2차보고서.md
+│ └── images/ # 보고서용 다이어그램, 그래프 이미지
+│
+├── experiment_logs/ # 실험 결과 로그 파일
+│ ├── exp2_agents_100.log
+│ └── exp3_kill_10.log
+│
+└── vendor/ # 외부 의존성 모듈 (Go vendor)
 
-프로젝트의 **메인 실행 프로그램 진입점**이 들어있는 폴더이다.
-각 하위 폴더가 개별 실행 파일이다.
-
-| 폴더 | 역할 |
-| --- | --- |
-| `cmd/agent/` | 에이전트(Agent) 노드의 실행 진입점 - 작업 실행·상태 관리 담당 |
-| `cmd/control/` | 컨트롤(Control) 서버 실행 진입점 - 중앙 관리 및 API 서버 |
-| `cmd/seeder/` | 시더(Seeder) 노드 실행 진입점 - P2P로 입력 파일 전송 |
-| `cmd/dhtget/` | DHT 네트워크에서 데이터를 가져오는 유틸리티 도구(디버깅용) |
-
-## `pkg/` — 공통 라이브러리 (Core Packages)
-
-모든 실행 모듈(`cmd/...`)에서 공통으로 사용하는 **핵심 기능 패키지**들이 위치한다.
-
-| 폴더 | 역할 |
-| --- | --- |
-| `pkg/agent/` | 에이전트 로직: 작업 실행, 상태 보고, 리스(Lease) 관리 |
-| `pkg/dht/` | 분산 해시 테이블(DHT) 노드 및 XOR 라우팅 로직 |
-| `pkg/p2p/` | 피어 간 P2P 통신 프로토콜 구현 |
-| `pkg/task/` | 작업(Task) 데이터 구조 및 리소스·자원 점유 관련 로직 |
-| `pkg/demand/` | PostgreSQL 기반 작업(Job) 저장 및 관리 로직 |
-| `pkg/seeder/` | 시더(Seeder) 요청 처리 및 데이터 분배 로직 |
+- **`cmd/`** — 프로젝트의 실행 진입점으로, 각 하위 폴더가 독립 실행 프로그램  
+- **`pkg/`** — `cmd`에서 공통으로 사용하는 핵심 로직 패키지  
+- **`Report/`** — 보고서 및 이미지 리소스 저장 폴더  
+- **`experiment_logs/`** — 실험 로그 및 결과 기록  
+- **`vendor/`** — 외부 Go 패키지 의존성  
 
 
 
