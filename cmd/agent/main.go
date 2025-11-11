@@ -94,7 +94,11 @@ func main() {
 		
 			return
 		}
-
+if manWait, err := agent.WaitForManifest(context.Background(), *controlURL, token, jobID, 15*time.Second); err == nil {
+    log.Printf("[agent] manifest ready for job=%s (root_cid=%s)", jobID, manWait.RootCID)
+} else {
+    log.Printf("[agent] manifest wait timeout for job=%s: %v", jobID, err)
+}
 		log.Printf("[agent] 작업 점유 성공 job=%s ver=%d exp=%s",
 			jobID, lease.Version, lease.Expires.Format(time.RFC3339))
 		log.Printf(`{"event":"lease_acquired","timestamp":"%s","job_id":"%s","agent_id":"%s"}`,

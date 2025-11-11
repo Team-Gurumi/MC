@@ -19,8 +19,8 @@ set -euo pipefail
 # AGENTS, TASKS, KILL_PERCENT는 루프 내에서 덮어쓰게 됩니다.
 export HB_SEC="${HB_SEC:-5}"
 export TTL_SEC="${TTL_SEC:-20}"
-export RUNTIME_BEFORE_KILL="${RUNTIME_BEFORE_KILL:-60}"
-export POST_KILL_OBSERVE="${POST_KILL_OBSERVE:-200}"
+export RUNTIME_BEFORE_KILL="${RUNTIME_BEFORE_KILL:-10}"
+export POST_KILL_OBSERVE="${POST_KILL_OBSERVE:-420}"
 export MC_DISABLE_AUTH="${MC_DISABLE_AUTH:-1}"
 
 # --- 로그 디렉터리 생성 ---
@@ -31,7 +31,7 @@ echo "####### 1. 시작: 실험 1 (확장성 테스트) #######"
 echo "(AGENTS와 TASKS 변경, KILL_PERCENT=10% 고정)"
 echo "---------------------------------------------------------"
 
-AGENT_LIST="50 100 200 500"
+AGENT_LIST="500"
 
 for N_AGENTS in $AGENT_LIST; do
     # 에이전트 1명당 10개의 작업 할당 (100/1000 비율 유지)

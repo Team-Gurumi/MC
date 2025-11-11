@@ -19,8 +19,8 @@ set -euo pipefail
 # AGENTS, TASKS, KILL_PERCENT는 루프 내에서 덮어쓰게 됩니다.
 export HB_SEC="${HB_SEC:-5}"
 export TTL_SEC="${TTL_SEC:-20}"
-export RUNTIME_BEFORE_KILL="${RUNTIME_BEFORE_KILL:-60}"
-export POST_KILL_OBSERVE="${POST_KILL_OBSERVE:-300}"
+export RUNTIME_BEFORE_KILL="${RUNTIME_BEFORE_KILL:-2}"
+export POST_KILL_OBSERVE="${POST_KILL_OBSERVE:-800}"
 export MC_DISABLE_AUTH="${MC_DISABLE_AUTH:-1}"
 
 # --- 로그 디렉터리 생성 ---
@@ -32,7 +32,7 @@ echo "#######  시작: 실험 2 (스트레스 테스트) #######"
 echo "(AGENTS=100, TASKS=1000 고정, KILL_PERCENT 변경)"
 echo "--------------------------------------------------------"
 
-KILL_LIST="10 20 40 60 80 90"
+KILL_LIST="10 20 40 60"
 
 for K_PERCENT in $KILL_LIST; do
     LOG_FILE="${LOG_DIR}/exp3_kill_${K_PERCENT}.log"

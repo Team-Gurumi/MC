@@ -13,14 +13,13 @@ TASKS="${TASKS:-200}"
 HB_SEC="${HB_SEC:-5}"
 TTL_SEC="${TTL_SEC:-15}"
 KILL_PERCENT="${KILL_PERCENT:-10}"
-RUNTIME_BEFORE_KILL="${RUNTIME_BEFORE_KILL:-60}"
-POST_KILL_OBSERVE="${POST_KILL_OBSERVE:-60}"
+RUNTIME_BEFORE_KILL="${RUNTIME_BEFORE_KILL:-10}"
+POST_KILL_OBSERVE="${POST_KILL_OBSERVE:-300}"
 
 # 컨테이너 정책 (작업이 실제로 컨테이너 이미지를 쓴다는 가정)
 DOCKER_IMAGE="${DOCKER_IMAGE:-alpine:latest}"
 AGENT_FLAGS="${AGENT_FLAGS:-}"
 
-# Manifest providers JSON (선택 사항).
 PROVIDERS_JSON="${PROVIDERS_JSON:-}"
 SUBMIT_BATCH="${SUBMIT_BATCH:-20}"
 SUBMIT_PAUSE_SEC="${SUBMIT_PAUSE_SEC:-0.15}"
@@ -31,9 +30,10 @@ TS="$(date +%Y%m%d-%H%M%S)"
 OUT="bench_artifacts/${TS}"
 LOGDIR="${OUT}/logs"
 mkdir -p "${LOGDIR}" "${OUT}/results"
-
+SEEDER_LOG="${LOGDIR}/seeder.log"
 # -------- cleanup & DB helper --------
 CONTROL_PID=""
+SEEDER_PID=""
 AGENT_PIDS_FILE="${OUT}/agents.pids"
 
 cleanup() {
@@ -52,6 +52,10 @@ cleanup() {
     kill "${CONTROL_PID}" 2>/dev/null || true
   fi
 }
+  # <--- NEW: 시더 프로세스 종료
+  if [[ -n "${SEEDER_PID}" ]]; then
+    kill "${SEEDER_PID}" 2>/dev/null || true
+  fi
 trap cleanup EXIT INT TERM
 
 run_psql_truncate() {
@@ -70,7 +74,9 @@ fi
 if ! docker info >/dev/null 2>&1; then
   echo "[FATAL] docker daemon not running or insufficient permission"; exit 1
 fi
-
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[FATAL] jq not found in PATH. Please install jq."; exit 1
+fi
 echo "==> Checking docker image: ${DOCKER_IMAGE}"
 if ! docker image inspect "${DOCKER_IMAGE}" >/dev/null 2>&1; then
   echo "[WARN] image not found locally, trying to pull..."
@@ -99,6 +105,43 @@ http_ready() {
   curl -fsS "${base}/" >/dev/null 2>&1 || curl -fsS "${base}/api/health" >/dev/null 2>&1
 }
 
+
+# -------- <--- NEW: 시더(Seeder) 시작 --------
+echo "==> Starting seeder (bootstrap anchor)"
+# 'exec env -i'는 환경 변수를 초기화하므로 명시적 전달
+( exec env -i PATH="$PATH" HOME="$HOME" MC_NS="${NS}" \
+    ./seeder -ns "${NS}" \
+    > "${SEEDER_LOG}" 2>&1 ) &
+SEEDER_PID=$!
+
+
+sleep 1 # Seeder가 로그를 남길 때까지 잠시 대기
+# -------- 부트스트랩 멀티주소 추출 (Seeder 로그에서) --------
+BOOTSTRAP=""
+
+# 1) localhost 우선
+BOOTSTRAP=$(grep '/ip4/127.0.0.1/' "$SEEDER_LOG" | grep '/p2p/' | head -n1 | sed -E 's/^\[seeder\] addr: //')
+
+# 2) docker bridge 우선순위 2
+if [ -z "$BOOTSTRAP" ]; then
+  BOOTSTRAP=$(grep '/ip4/172.17.0.1/' "$SEEDER_LOG" | grep '/p2p/' | head -n1 | sed -E 's/^\[seeder\] addr: //')
+fi
+
+# 3) 그래도 없으면 첫 줄에서 prefix만 제거
+if [ -z "$BOOTSTRAP" ]; then
+  BOOTSTRAP=$(grep -m1 '/p2p/' "$SEEDER_LOG" | sed -E 's/^\[seeder\] addr: //')
+fi
+
+if [ -z "$BOOTSTRAP" ]; then
+  echo "[FATAL] Failed to extract bootstrap multiaddr from ${SEEDER_LOG}" >&2
+  kill "${SEEDER_PID}" 2>/dev/null
+  exit 1
+fi
+
+echo "==> Using bootstrap (from seeder): ${BOOTSTRAP}"
+echo "BOOTSTRAP=${BOOTSTRAP}" >> "${OUT}/config.txt"
+
+
 # -------- 컨트롤러 시작 --------
 PORT="$(pick_free_port "$START_PORT")"
 CONTROL_URL="http://127.0.0.1:${PORT}"
@@ -116,6 +159,7 @@ RUNTIME_BEFORE_KILL=${RUNTIME_BEFORE_KILL}s
 POST_KILL_OBSERVE=${POST_KILL_OBSERVE}s
 DOCKER_IMAGE=${DOCKER_IMAGE}
 Artifacts: ${OUT}
+BOOTSTRAP=${BOOTSTRAP}
 EOF
 
 cat "${OUT}/config.txt"
@@ -133,6 +177,7 @@ echo "==> Starting control @ ${CONTROL_URL}"
 (
   exec env -i PATH="$PATH" HOME="$HOME" "${CONTROL_ENV[@]}" \
     ./control -ns "${NS}" -http-port "${PORT}" \
+    -bootstrap "${BOOTSTRAP}" \
     > "${LOGDIR}/control.log" 2>&1
 ) &
 CONTROL_PID=$!
@@ -151,18 +196,20 @@ if ! http_ready "${CONTROL_URL}"; then
   exit 1
 fi
 
-#부트스트랩 멀티주소 추출 (루프백/tcp 우선)
-BOOTSTRAP=""
-BOOTSTRAP="$(awk '/addr: .*\/ip4\/127\.0\.0\.1\/tcp\/[^ ]*\/p2p\//{print $NF; exit}' "${LOGDIR}/control.log" 2>/dev/null || true)"
-if [ -z "${BOOTSTRAP}" ]; then
-  BOOTSTRAP="$(grep '/p2p/' "${LOGDIR}/control.log" | sed -n 's/.*addr: \([^ ]*\).*/\1/p' | head -n1)"
-fi
-if [ -z "${BOOTSTRAP}" ]; then
-  echo "[FATAL] Failed to extract bootstrap multiaddr from ${LOGDIR}/control.log" >&2
+# <--- NEW: BOOTSTRAP 주소에서 SEEDER_PEER_ID 추출
+# 예: /ip4/127.0.0.1/tcp/51351/p2p/12D3KooW... -> 12D3KooW...
+SEEDER_PEER_ID=$(echo "$BOOTSTRAP" | sed -n 's|.*/p2p/||p')
+
+if [ -z "$SEEDER_PEER_ID" ]; then
+  echo "[FATAL] Failed to extract Peer ID from BOOTSTRAP address: ${BOOTSTRAP}" >&2
+  kill "${SEEDER_PID}" 2>/dev/null
+
+
   exit 1
 fi
 echo "==> Using bootstrap: ${BOOTSTRAP}"
 echo "BOOTSTRAP=${BOOTSTRAP}" >> "${OUT}/config.txt"
+echo "==> Using Seeder Peer ID: ${SEEDER_PEER_ID}"
 
 # -------- 에이전트 생성 --------
 echo "==> Spawning ${AGENTS} agents"
@@ -202,7 +249,22 @@ TASKS_FILE="${OUT}/tasks.jsonl"
 
 for j in $(seq 1 "${TASKS}"); do
   JOB="job-${TS}-${j}"
-  body="{\"id\":\"${JOB}\",\"image\":\"${DOCKER_IMAGE}\",\"command\":[\"/bin/sh\",\"-lc\",\"echo agent:$RANDOM && sleep 10 && echo done\"]}"
+ 
+ CMD_STR="echo agent:$RANDOM && sleep 30 && echo done"
+
+  body=$(jq -n \
+    --arg id "$JOB" \
+    --arg image "$DOCKER_IMAGE" \
+    --arg cmd_str "$CMD_STR" \
+    --arg peer_id "$SEEDER_PEER_ID" \
+    --arg seeder_addr "$BOOTSTRAP" \
+    '{
+      id: $id,
+      image: $image,
+      command: ["/bin/sh", "-lc", $cmd_str],
+      peer_id: $peer_id,
+      addrs: [$seeder_addr]
+    }')
 
   http_code="$(curl -sS -o /tmp/resp.$$ -w '%{http_code}' -X POST "${CONTROL_URL}/api/tasks" \
                  -H 'Content-Type: application/json' "${AUTH_HEADER[@]}" -d "${body}" || true)"

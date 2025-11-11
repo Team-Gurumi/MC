@@ -153,11 +153,20 @@ if [ -z "$BOOTSTRAP" ]; then
 fi
 
 echo "==> Using bootstrap (from seeder): ${BOOTSTRAP}"
+SEEDER_PEER_ID=$(echo "$BOOTSTRAP" | sed -n 's|.*/p2p/||p')
+if [ -z "$SEEDER_PEER_ID" ]; then
+  echo "[FATAL] Failed to extract Peer ID from BOOTSTRAP address: ${BOOTSTRAP}" >&2
+  kill "${SEEDER_PID}" 2>/dev/null
+  exit 1
+fi
+echo "==> Using Seeder Peer ID: ${SEEDER_PEER_ID}"
 
 echo "BOOTSTRAP=${BOOTSTRAP}" >> "${OUT}/config.txt"
 
 
 # -------- 컨트롤러 시작 --------
+
+#<--- NEW: BOOTSTRAP 주소에서 SEEDER_PEER_ID 추출
 PORT="$(pick_free_port "$START_PORT")"
 CONTROL_URL="http://127.0.0.1:${PORT}"
 
@@ -260,9 +269,22 @@ TASKS_FILE="${OUT}/tasks.jsonl"
 
 for j in $(seq 1 "${TASKS}"); do
   JOB="job-${TS}-${j}"
-  # <--- 수정됨: 작업 실행 시간을 길게 설정
-  body="{\"id\":\"${JOB}\",\"image\":\"${DOCKER_IMAGE}\",\"command\":[\"/bin/sh\",\"-lc\",\"echo agent: task ${JOB} running for ${TASK_SLEEP_DURATION}s && sleep ${TASK_SLEEP_DURATION} && echo agent: task ${JOB} done\"]}"
-  
+
+  CMD_STR="echo agent: task ${JOB} running for ${TASK_SLEEP_DURATION}s && sleep ${TASK_SLEEP_DURATION} && echo agent: task ${JOB} done"
+
+  body=$(jq -n \
+    --arg id "$JOB" \
+    --arg image "$DOCKER_IMAGE" \
+    --arg cmd_str "$CMD_STR" \
+    --arg peer_id "$SEEDER_PEER_ID" \
+    --arg seeder_addr "$BOOTSTRAP" \
+    '{
+      id: $id,
+      image: $image,
+      command: ["/bin/sh", "-lc", $cmd_str],
+      peer_id: $peer_id,
+      addrs: [$seeder_addr]
+    }')
   http_code="$(curl -sS -o /tmp/resp.$$ -w '%{http_code}' -X POST "${CONTROL_URL}/api/tasks" \
                  -H 'Content-Type: application/json' "${AUTH_HEADER[@]}" -d "${body}" || true)"
   cat /tmp/resp.$$ >> "${TASKS_FILE}"; echo >> "${TASKS_FILE}"
@@ -456,5 +478,7 @@ if [[ $INC_COMP -lt 0 ]]; then INC_COMP=0; fi
 } >> "${REPORT_FILE}"
 
 cat "${REPORT_FILE}"
+run_psql_truncate
+
 echo "==> DONE. See ${OUT}"
 

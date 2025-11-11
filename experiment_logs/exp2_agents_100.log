@@ -12,12 +12,12 @@ TASKS=1000
 HB_SEC=5
 TTL_SEC=20
 KILL_PERCENT=10
-RUNTIME_BEFORE_KILL=60s
-POST_KILL_OBSERVE=200s
+RUNTIME_BEFORE_KILL=2s
+POST_KILL_OBSERVE=420s
 DOCKER_IMAGE=alpine:latest
-Artifacts: bench_artifacts/20251107-120022
+Artifacts: bench_artifacts/20251107-191644
 ==> Starting control @ http://127.0.0.1:8080
-==> Using bootstrap: /ip4/127.0.0.1/tcp/37293/p2p/12D3KooWCKACMRzmgkbHjfeDm1NTwPnctomgk6sgzSraQ8SNyuwH
+==> Using bootstrap: /ip4/127.0.0.1/tcp/40361/p2p/12D3KooWDuy5FVVJY6NWDTEWizCxXEj7s5duYzPDBzXagF1Hvv49
 ==> Spawning 100 agents
 agents started: 100
 ==> Submitting 1000 tasks
@@ -29,34 +29,3 @@ agents started: 100
   submitted: 600
   submitted: 700
   submitted: 800
-  submitted: 900
-  submitted: 1000
-==> Sleeping 60s
-==> SIGKILL 10/100 agents
-./run_fault_tolerance_benchmark.sh: 줄 251: 222920 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
-./run_fault_tolerance_benchmark.sh: 줄 251: 222991 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
-./run_fault_tolerance_benchmark.sh: 줄 251: 223113 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
-./run_fault_tolerance_benchmark.sh: 줄 252: 222886 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
-==> Observing 200s
-./run_fault_tolerance_benchmark.sh: 줄 253: 222718 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
-./run_fault_tolerance_benchmark.sh: 줄 253: 222900 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
-./run_fault_tolerance_benchmark.sh: 줄 253: 223181 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
-./run_fault_tolerance_benchmark.sh: 줄 253: 223195 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
-./run_fault_tolerance_benchmark.sh: 줄 253: 223270 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
-./run_fault_tolerance_benchmark.sh: 줄 253: 223421 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
-==> Stopping remaining agents
-==> Running metrics analyzer
-# Benchmark Report (API-based)
-
-- total tasks: 1000
-- completed: 1000
-- success_rate: 100.0000%
-- status breakdown:
-  - succeeded: 1000
-- MTTR p50: 0.0005s  (target ≤ 120s)
-- MTTR p95: 0.0059s  (target ≤ 180s)
-- duplicate execution rate: 0.7000%  (target ≤ 1%)
-- false recall rate: 0.0000%  (target ≤ 0.5%)
-==> Truncating demand_jobs
-TRUNCATE TABLE
-==> DONE. See bench_artifacts/20251107-120022

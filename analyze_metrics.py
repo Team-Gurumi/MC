@@ -143,7 +143,7 @@ def main():
     total = len(job_ids)
     success_rate = (len(completed) / total * 100.0) if total > 0 else 0
 
-    # (선택 사항) 로그에서 이벤트를 파싱하여 추가 지표 계산
+   #로그에서 이벤트를 파싱하여 추가 지표 계산
     def try_logs_for_extras():
         try:
             all_events = []
@@ -157,13 +157,11 @@ def main():
                         jid = obj.get("job_id") or obj.get("task_id") or obj.get("id")
                         aid = obj.get("agent_id") or obj.get("peer_id") or obj.get("agent")
                         
-                        # --- 수정된 부분 ---
-                        # jid와 ts만 있어도 기본 이벤트로 수집
                         if jid and ts:
-                           event_data = {"ev": ev, "ts": ts, "job": jid}
-                           if aid:
-                               event_data["agent"] = aid
-                           all_events.append(event_data)
+                            event_data = {"ev": ev, "ts": ts, "job": jid}
+                            if aid:
+                                event_data["agent"] = aid
+                            all_events.append(event_data)
             
             # 시간순으로 이벤트 정렬
             all_events.sort(key=lambda x: x["ts"])
@@ -171,9 +169,13 @@ def main():
             # --- 지표 계산 로직 ---
             job_failure_times = {}
             recovery_times = []
-            job_executions = defaultdict(set)
             recalled_jobs = {}
             agent_completions = {}
+            
+            # *** 수정된 부분 (중복 실행률 로직 변경) ***
+            job_active_agent = {} # K: jid, V: aid (현재 이 작업을 실행 중인 에이전트)
+            true_duplicate_jobs = set() # K: jid (진짜 중복 실행이 발생한 작업 ID)
+            # *** (기존 job_executions = defaultdict(set) 제거) ***
 
             for event in all_events:
                 jid = event["job"]
@@ -185,9 +187,20 @@ def main():
                 if ev in ("lease_expired", "reassigned"):
                     if jid not in job_failure_times:
                         job_failure_times[jid] = ts
-                        # 오탐지율 계산용 (aid가 있는 경우에만 기록)
-                        if ev == 'reassigned' and jid not in recalled_jobs and aid:
-                             recalled_jobs[jid] = {"agent": aid, "time": ts}
+                    
+                    # 오탐지율 계산용 (aid가 있는 경우에만 기록)
+                    if ev == 'reassigned' and jid not in recalled_jobs and aid:
+                        recalled_jobs[jid] = {"agent": aid, "time": ts}
+                    
+                    # *** 추가된 부분: 작업이 실패/회수되면 활성 상태 해제 ***
+                    # (aid가 명시된 경우) 현재 활성 에이전트와 일치할 때만 해제
+                    # (aid가 없거나 reassigned인 경우) 컨트롤러가 회수한 것이므로 강제 해제
+                    current_agent = job_active_agent.get(jid)
+                    if current_agent and aid and current_agent == aid:
+                         del job_active_agent[jid]
+                    elif ev == 'reassigned' and jid in job_active_agent:
+                         # aid가 없어도 reassigned는 활성 에이전트를 해제해야 함
+                         del job_active_agent[jid] 
                 
                 elif ev in ("lease_acquired", "running"):
                     if jid in job_failure_times:
@@ -195,14 +208,30 @@ def main():
                         recovery_duration = (ts - failure_ts).total_seconds()
                         if recovery_duration >= 0:
                             recovery_times.append(recovery_duration)
-                    # 중복 실행률 계산용 (aid가 있는 경우에만 기록)
+                    
+                    # *** 수정된 부분: 중복 실행률 계산 로직 변경 ***
                     if aid:
-                        job_executions[jid].add(aid)
+                        current_agent = job_active_agent.get(jid)
+                        if current_agent is not None and current_agent != aid:
+                            # 이미 다른 에이전트가 활성 상태인데, 새 에이전트가 작업을 시작함
+                            # 이것이 "진짜" 중복 실행임
+                            true_duplicate_jobs.add(jid)
+                        
+                        # 현재 에이전트를 활성 상태로 등록
+                        job_active_agent[jid] = aid
                 
                 elif ev == "completed":
                     # 오탐지율 계산용 (aid가 있는 경우에만 기록)
                     if aid:
                         agent_completions[jid] = aid
+                    
+                    # *** 추가된 부분: 작업이 완료되면 활성 상태 해제 ***
+                    current_agent = job_active_agent.get(jid)
+                    if aid and current_agent and current_agent == aid:
+                        del job_active_agent[jid]
+                    elif not aid and jid in job_active_agent:
+                         # aid 없이 완료 이벤트가 뜰 경우 (드물지만), 일단 해제
+                         del job_active_agent[jid]
 
             # MTTR
             mttr_p50 = statistics.median(recovery_times) if recovery_times else None
@@ -212,11 +241,11 @@ def main():
                 p95_index = int(len(recovery_times) * 0.95)
                 mttr_p95 = recovery_times[p95_index] if p95_index < len(recovery_times) else recovery_times[-1]
 
-            # 중복 실행률
-            dup_exec_count = sum(1 for agents in job_executions.values() if len(agents) > 1)
+           
+            dup_exec_count = len(true_duplicate_jobs) # (기존 로직 대신 true_duplicate_jobs 세트의 크기를 사용)
             dup_exec_rate = (dup_exec_count / total * 100.0) if total > 0 else 0
 
-            # 오탐지율
+            # 오탐지율 (기존 로직 유지)
             false_recall_count = 0
             for jid, recall_info in recalled_jobs.items():
                 if jid in agent_completions and agent_completions[jid] == recall_info["agent"]:
@@ -232,7 +261,6 @@ def main():
         except Exception as e:
             print(f"[WARN] Failed to analyze logs for extra metrics: {e}", file=sys.stderr)
             return { "mttr_p50_s": None, "mttr_p95_s": None, "dup_exec_rate_percent": None, "false_recall_rate_percent": None }
-
     extras = try_logs_for_extras()
 
     result = {
