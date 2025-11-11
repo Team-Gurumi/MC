@@ -1,7 +1,5 @@
 # 프로젝트 구조
 
-구조
-
 team-gurumi/mc/
 ├── Makefile # 빌드 및 설치 명령 정의
 ├── go.mod / go.sum # Go 모듈 의존성 관리
