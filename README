@@ -9,7 +9,7 @@
 
 ---
 
-## 🧩 `cmd/` — 실행 진입점 (Main Applications)
+## 🌿 `cmd/` — 실행 진입점 (Main Applications)
 
 프로젝트의 **메인 실행 프로그램 진입점**이 들어있는 폴더이다.  
 각 하위 폴더가 개별 실행 파일이다.
@@ -36,7 +36,6 @@
 | `pkg/demand/` | PostgreSQL 기반 작업(Job) 저장 및 관리 로직 |
 | `pkg/seeder/` | 시더(Seeder) 요청 처리 및 데이터 분배 로직 |
 
----
 
 
 
