@@ -1,5 +1,6 @@
 # Project Structure
 
+```
 team-gurumi/mc/
 ├── Makefile                     # Build and installation commands
 ├── go.mod / go.sum              # Go module dependency management
@@ -32,6 +33,7 @@ team-gurumi/mc/
 │ └── exp3_kill_10.log
 │
 └── vendor/                      # External Go dependencies (vendored)
+```
 
 ## Folder Overview
 
