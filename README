@@ -39,6 +39,8 @@ team-gurumi/mc/
 - **experiment_logs/** — 실험 로그 및 결과 기록  
 - **vendor/** — 외부 Go 패키지 의존성  
 
+Postgres SQL이 꼭 깔려있어야 함.
+
 
 
 
@@ -82,3 +84,93 @@ curl -X POST http://100.70.1.2:8080/api/tasks/push \
 # 결과 확인
 curl http://<control-host>:8080/api/tasks
 curl http://<control-host>:8080/api/tasks/<taskId>
+
+
+
+````md
+# Local Multi-Node Demo
+
+This document explains how to test the entire flow: Seeder → Control → Agent → Job Submitter in a local environment.
+
+# 1. Running the Control Node
+
+Use the exact multi-address output by the Seeder node as the bootstrap address.
+
+```bash
+export CTRL_BOOT="/ip4/127.0.0.1/tcp/37317/p2p/12D3KooWRR5VuMnELgFdjn6sH1RiriRGdX52JssN1hEdUTU8miG1"
+
+MC_DISABLE_AUTH=1 \
+go run ./cmd/control \
+  -ns mc \
+  -bootstrap "$CTRL_BOOT"
+````
+
+Note: Successful execution is confirmed when the Control server logs indicate it has joined the DHT.
+
+# 2. Running the Agent Node
+
+The Agent connects to the Control server, performs DHT discovery, and automatically claims registered jobs.
+
+```bash
+BOOTSTRAP="/ip4/127.0.0.1/tcp/37317/p2p/12D3KooWRR5VuMnELgFdjn6sH1RiriRGdX52JssN1hEdUTU8miG1"
+
+go run ./cmd/agent \
+  -ns mc \
+  -control-url http://127.0.0.1:8080 \
+  -auth-token dev \
+  -bootstrap "$BOOTSTRAP"
+```
+
+# 3. Job Creation & Manifest Registration
+
+## 3-1. Job Creation (Job ID Auto-Generated)
+
+If the id field is omitted, the Control server automatically generates a job ID.
+
+```bash
+# Create a new job (server auto-generates the 'id' field if left empty)
+TASK_JSON=$(curl -sS -X POST http://127.0.0.1:8080/api/tasks \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer dev' \
+  -d "{
+    \"image\": \"dpokidov/imagemagick:7.1.1-17-ubuntu\",
+    \"command\": [\"convert\", \"input/input.jpg\", \"-colorspace\", \"Gray\", \"output_gray.jpg\"]
+  }")
+
+echo "$TASK_JSON" | jq
+
+# Extract the generated JOB ID
+JOB=$(echo "$TASK_JSON" | jq -r '.id')
+echo "JOB ID: $JOB"
+```
+
+## 3-2. Manifest Registration (File Transfer Info from Seeder to Agent)
+
+Register the file location and Seeder provider info so the Agent can fetch the input file.
+
+```bash
+SEEDER_PEER="12D3KooWJ9sseudcqrkD1YeiuCtvxmG5UZn6TXfZM2HvyMv28GsK"
+SEEDER_ADDR="/ip4/127.0.0.1/tcp/36053/p2p/12D3KooWJ9sseudcqrkD1YeiuCtvxmG5UZn6TXfZM2HvyMv28GsK"
+
+curl -s -X POST http://127.0.0.1:8080/jobs/$JOB/manifest \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer dev' \
+  -d "{
+    \"root_cid\": \"input.jpg\",
+    \"providers\": [{
+      \"peer_id\": \"$SEEDER_PEER\",
+      \"addrs\": [\"$SEEDER_ADDR\"]
+    }]
+  }"
+```
+
+# 4. Checking Job Status
+
+```bash
+curl -s -H 'Authorization: Bearer dev' \
+  http://127.0.0.1:8080/api/tasks/$JOB | jq
+```
+
+Note: The Agent logs should also include a message indicating that the job was successfully claimed.
+
+
