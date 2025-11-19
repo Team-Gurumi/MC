@@ -1,7 +1,7 @@
 ![System Diagram](./Report/images/diagram.png)
-![System Diagram](./Report/images/lower_layer.png)
-![System Diagram](./Report/images/middle_layer.png)
-![System Diagram](./Report/images/upper_layer.png)
+![System Diagram](./Report/images/upper_layer.png) ![System Diagram](./Report/images/middle_layer.png) ![System Diagram](./Report/images/lower_layer.png)
+
+
 
 
 # Project Structure
