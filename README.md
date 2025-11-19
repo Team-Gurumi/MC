@@ -146,7 +146,7 @@ curl http://<control-host>:8080/api/tasks/<taskId>
 
 This document explains how to test the entire flow: Seeder → Control → Agent → Job Submitter in a local environment.
 
-# 0. Running the Seeder Node
+## 0. Running the Seeder Node
 
 The Seeder node serves files to Agents.  
 Start the Seeder with local bootstrap disabled (it will generate its own peer ID and listen address).
