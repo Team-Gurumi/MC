@@ -1,5 +1,6 @@
 # 프로젝트 구조
 
+```
 team-gurumi/mc/
 ├── Makefile # 빌드 및 설치 명령 정의
 ├── go.mod / go.sum # Go 모듈 의존성 관리
@@ -32,6 +33,7 @@ team-gurumi/mc/
 │ └── exp3_kill_10.log
 │
 └── vendor/ # 외부 의존성 모듈 (Go vendor)
+```
 
 - **cmd/** — 프로젝트의 실행 진입점으로, 각 하위 폴더가 독립 실행 프로그램  
 - **pkg/** — `cmd`에서 공통으로 사용하는 핵심 로직 패키지  
