@@ -52,7 +52,7 @@ PostgreSQL **must** be installed before running the project or executing experim
 Before running any experiment scripts, the following environment variables must be set:
 
 ```bash
-# PostgreSQL DB Connection String
+# PostgreSQL DB Connection String(etc)
 export MC_DB_DSN='postgres://mcuser:mcpw@127.0.0.1:5432/mc?sslmode=disable'
 
 # Disable authentication
@@ -60,7 +60,7 @@ export MC_DISABLE_AUTH=1
 
 # Docker socket permissions
 export DOCKER_HOST=unix:///var/run/docker.sock
-
+```
 
 # Remote Installation and Task Execution Guide
 
