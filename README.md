@@ -1,7 +1,40 @@
+﻿# MC — Mutual Cloud
+
 ![System Diagram](./Report/images/diagram.png)
+
+Mutual Cloud is a lightweight distributed task execution platform built on:
+
+- libp2p Kad-DHT for discovery and coordination
+- PostgreSQL for durable task state
+- Docker containers for execution
+
+It consists of three runtime components:
+
+- `cmd/control` — Control server: HTTP API + job store (Postgres) + DHT announcer
+- `cmd/agent` — Agent node: discovers tasks via DHT, claims leases, runs containers
+- `cmd/seeder` — Seeder node: delivers input files over P2P
+
 ![System Diagram](./Report/images/upper_layer.png) ![System Diagram](./Report/images/middle_layer.png) ![System Diagram](./Report/images/lower_layer.png)
 
+## Architecture Overview
 
+Core design patterns:
+
+- Tasks are created via HTTP and persisted in PostgreSQL.
+- Control writes task state to the DHT (`task/{id}/state`, `task/{id}/manifest`).
+- Agents discover tasks via DHT (`task-index/{ns}`), claim via HTTP lease, and execute.
+- Input files are fetched from Seeder using peer multiaddrs.
+- Completion is reported via `POST /api/tasks/{id}/finish` with lease validation.
+
+Key locations:
+
+- `cmd/control/control_http.go` — task creation, try-claim, finish, manifest
+- `cmd/agent/main.go` — discover → claim → fetch → run → report
+- `pkg/task/types.go` — shared DHT/DTO types and key builders
+- `pkg/dht/node.go` — bootstrap, multiaddr, kad-DHT setup
+- `pkg/agent` — container execution (`RunInContainer()`), fetch logic
+
+---
 
 
 # Project Structure
@@ -67,6 +100,7 @@ export MC_DISABLE_AUTH=1
 # Docker socket permissions
 export DOCKER_HOST=unix:///var/run/docker.sock
 ```
+
 
 # Remote Installation and Task Execution Guide
 
