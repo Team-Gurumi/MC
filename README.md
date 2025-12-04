@@ -1,6 +1,7 @@
 ﻿# MC — Mutual Cloud
 
-![System Diagram](./Report/images/diagram.png)
+![System Diagram](./Report/images/infographic1.png)
+
 
 Mutual Cloud is a lightweight distributed task execution platform built on:
 
@@ -17,6 +18,7 @@ It consists of three runtime components:
 ![System Diagram](./Report/images/upper_layer.png) ![System Diagram](./Report/images/middle_layer.png) ![System Diagram](./Report/images/lower_layer.png)
 
 ## Architecture Overview
+![System Diagram](./Report/images/diagram.png)
 
 Core design patterns:
 
@@ -101,6 +103,7 @@ export MC_DISABLE_AUTH=1
 export DOCKER_HOST=unix:///var/run/docker.sock
 ```
 
+![System Diagram](./Report/images/infographic2.png)
 
 # Remote Installation and Task Execution Guide
 
