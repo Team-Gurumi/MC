@@ -18,7 +18,7 @@ It consists of three runtime components:
 ![System Diagram](./Report/images/upper_layer.png) ![System Diagram](./Report/images/middle_layer.png) ![System Diagram](./Report/images/lower_layer.png)
 
 ## Architecture Overview
-![System Diagram](./Report/images/diagram.png)
+![System Diagram](./Report/images/diagramEg.png)
 
 Core design patterns:
 
