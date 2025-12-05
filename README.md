@@ -84,6 +84,8 @@ Report/ — Reports and related visual assets.
 experiment_logs/ — Experiment output logs.  
 vendor/ — Vendored Go module dependencies.
 
+![System Diagram](./Report/images/infographic2.png)
+
 ## Requirements
 
 PostgreSQL **must** be installed before running the project or executing experiment scripts.
@@ -103,7 +105,6 @@ export MC_DISABLE_AUTH=1
 export DOCKER_HOST=unix:///var/run/docker.sock
 ```
 
-![System Diagram](./Report/images/infographic2.png)
 
 # Remote Installation and Task Execution Guide
 
