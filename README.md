@@ -196,7 +196,6 @@ MC was evaluated under failure-heavy and large-scale environments.
 | **Control node kill (30s)** | *0 task loss*, uninterrupted execution      |
 | **Agent failure 60%**       | 100% completion, p95 MTTR ≈ 0.02s           |
 | **Scalability (50 → 500)**  | Millisecond-class reassignment              |
-| **Compared w/ Kubernetes**  | Up to **400× faster failover**, no blackout |
 
 > **Key Insight:**
 > *A fully decentralized architecture can outperform centralized HA systems in both recovery latency and scalability.*
