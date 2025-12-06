@@ -367,20 +367,7 @@ curl -s \
 * DHT churn optimization
 * Full DAG scheduler planned
 * Multi-DHT federation & malicious-node detection
-
----
-
-# 12. Citation (Optional)
-
 ```
-@project{mutual-cloud-2025,
-  title={Mutual Cloud: A Decentralized Control Plane for SPOF-Free Distributed Task Execution},
-  authors={Gurumi Team},
-  year={2025},
-  institution={Ewha Womans University}
-}
-```
-
 ---
 
 # 🏁 Closing Note
@@ -392,7 +379,4 @@ Mutual Cloud demonstrates:
 * ✔ Scalability without a central scheduler
 
 It shows that **decentralized control-plane architectures are not only theoretically sound, but practically implementable and empirically superior in failure-heavy environments.**
-
-This project embodies both **research contribution** and **real, reproducible engineering**.
-
 ---
