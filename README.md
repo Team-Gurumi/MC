@@ -1,203 +1,283 @@
 
 
-# 🌀 MC — Mutual Cloud
+# 🌀 Mutual Cloud (MC)
 
-### A P2P Decentralized Control Plane Framework for SPOF-Resilient Distributed Task Execution
+### A Decentralized Control Plane for SPOF-Free Distributed Task Execution
+
+*Research-driven system design with a fully working distributed implementation*
 
 ![System Diagram](./Report/images/infographic1.png)
 
-Mutual Cloud (MC) is a **lightweight distributed task execution platform** that removes the inherent limitations of centralized schedulers such as Kubernetes and Nomad.
-MC eliminates Single Points of Failure (SPOF) by decentralizing resource discovery, task claiming, and failure recovery using a peer-to-peer control plane.
+Mutual Cloud (MC) is a **P2P-based distributed task execution framework** that eliminates the structural limitations of centralized schedulers such as Kubernetes, Nomad, and Ray.
 
-MC is built on:
+We show that **task orchestration can be fully decentralized**—
+no leader election, no global state sync, no control-plane bottleneck—
+while maintaining **correctness, fault tolerance, and high scalability**.
 
-* **libp2p Kad-DHT** for decentralized discovery & coordination
-* **PostgreSQL** for durable task state
-* **Docker** (or Kata) for containerized execution
+MC is both:
 
-It is composed of three main runtime components:
-
-* **`cmd/control`** — Stateless control server: HTTP API + job store + DHT announcer
-* **`cmd/agent`** — Worker node: discovers tasks via DHT, claims leases, executes containers
-* **`cmd/seeder`** — Seeder node: provides input files to agents via P2P transport
+* 💡 **A research project** (theory, motivation, experiments, contribution)
+* 🧱 **A full working system** (real DHT, real containers, real agents)
 
 ---
 
-# ✨ Core Ideas
+# 1. Motivation
 
-## 1. Decentralized Orchestration
+Traditional orchestrators rely on **logical centralization**:
 
-* Control server *does not schedule tasks*.
-* Agents autonomously discover executable tasks by querying the DHT.
+* Leader election → unavoidable blackout
+* Global synchronization → high tail latency
+* Central writes → scalability ceilings
 
-## 2. DHT-Based Discovery
+Even HA Kubernetes clusters cannot escape these constraints.
 
-* Task manifests and state are published into a Distributed Hash Table.
-* Agents query `task-index/{ns}` to find pending tasks.
+Our research question:
 
-## 3. Atomic Claim & Lease
+> **Can a distributed execution system function with *no logical center* while still ensuring correctness and availability?**
 
-* Agents claim tasks via a CAS-based lease protocol (`try-claim`).
-* Fencing tokens prevent duplicate/stale execution.
-
-## 4. P2P Artifact Delivery
-
-* Seeder exposes input files via libp2p multiaddrs.
-* Agents fetch them directly without involving the Control server.
-
-## 5. Self-Healing Execution
-
-* If an Agent dies or loses its lease, tasks re-enter the pending set and are reclaimed by others.
+Mutual Cloud is our answer—backed by a real implementation and reproducible experiment results.
 
 ---
 
-# 🧩 Architecture Overview
+# 2. Research Contributions
 
+### 1) *Decentralized control plane via libp2p Kad-DHT*
 
-![System Diagram](./Report/images/diagramEg.png)
+Metadata is stored in the DHT; no scheduler, no central cluster state.
 
-![System Diagram](./Report/images/upper_layer.png)
-![System Diagram](./Report/images/middle_layer.png)
-![System Diagram](./Report/images/lower_layer.png)
+### 2) *Agent-driven autonomous scheduling*
 
+Agents proactively search, claim, fetch, execute, and finalize tasks.
 
-### High-level flow
+### 3) *Correctness through Atomic Lease + Fencing Tokens*
 
-1. User submits a task via HTTP → written to PostgreSQL
-2. Control publishes metadata to DHT (`task/{id}/state`, `task/{id}/manifest`)
-3. Agents discover tasks through Kad-DHT
-4. Agent atomically acquires lease → fetches input files from Seeder
-5. Agent executes container → streams logs → reports completion
-6. If failure occurs, task is instantly recoverable by other Agents
+Ensures safe execution and prevents duplicate or stale work.
 
-### Key code locations
+### 4) *P2P-based artifact distribution*
 
-* **`cmd/control/control_http.go`** — task creation, try-claim, finish, manifest
-* **`cmd/agent/main.go`** — discover → claim → fetch → run → report
-* **`pkg/task/types.go`** — task & manifest type definitions, DHT key builders
-* **`pkg/dht/node.go`** — libp2p + Kad-DHT bootstrap
-* **`pkg/agent`** — container execution, fetch logic
+Input datasets are fetched directly via multiaddrs.
+
+### 5) *Extensive evaluation under heavy failure*
+
+We validated MC under 50–500 nodes and up to 60% agent failures.
 
 ---
 
-# 📊 Experimental Results
+# 3. Architecture Overview
 
-MC has been evaluated under heavy failure and large-scale scenarios.
+![Diagram](./Report/images/diagramEg.png)
 
-### **SPOF Test — Control Node Kill**
+## 📚 Layered Components
 
-* Control server killed for 30 seconds
-* Agents continued executing tasks with **zero interruption**
-* Kubernetes (even HA mode) introduces blackout via leader election (3–8s) + pod recovery (10–35s)
 
-### **Failure Ratio Test (10% → 60% agent kill)**
 
-* Success rate maintained at **100%**
+![Upper](./Report/images/upper_layer.png)
+![Middle](./Report/images/middle_layer.png)
+![Lower](./Report/images/lower_layer.png)
+
+---
+
+## Components
+
+| Component      | Description                                                               |
+| -------------- | ------------------------------------------------------------------------- |
+| **Control**    | Stateless task entrypoint, publishes metadata to PostgreSQL + DHT.        |
+| **Agent**      | Discovers tasks, acquires leases, fetches artifacts, executes containers. |
+| **Seeder**     | Provides input datasets via libp2p P2P transport.                         |
+| **PostgreSQL** | Durable backing store for lease verification.                             |
+| **Kad-DHT**    | Decentralized index for discovery and coordination.                       |
+
+---
+
+# 4.Design Highlights
+
+### 🔍 DHT-Based Task Discovery
+
+Control publishes:
+
+* `task/{id}/state`
+* `task/{id}/manifest`
+
+Agents query namespace indices:
+
+* `task-index/{ns}`
+
+**Why it matters:** enables *fully decentralized scheduling* with O(log N) lookup cost.
+
+---
+
+### 🔐 Atomic Lease + Fencing Token
+
+Guarantees:
+
+* Single legitimate executor
+* No zombie re-claims
+* Safe failover
+
+**Why it matters:** ensures *strong consistency* even under churn or partial failures.
+
+---
+
+### 🔄 Self-Healing Execution
+
+If an agent:
+
+* crashes
+* loses heartbeat
+* or lease expires
+
+→ work is instantly reassigned **without any central coordinator**.
+
+**Why it matters:** enables *millisecond-level failover* and no blackout periods.
+
+---
+
+### 📦 P2P Artifact Delivery
+
+Agents fetch data via:
+
+```
+/ip4/<host>/tcp/<port>/p2p/<peer-id>
+```
+
+**Why it matters:** avoids central bottlenecks; ideal for edge or federated clusters.
+
+---
+
+# 5. Experimental Results
+
+MC was evaluated to answer a central question: Can a fully decentralized execution system outperform HA leader-based systems in reliability and recovery speed?
+
+MC was evaluated under failure-heavy and large-scale environments.
+
+
+
+##  SPOF Test — Control Node Kill
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/e66a9abf-addc-4f8c-b890-f9ab83410bfd" width="480"/>
+  <br/>
+  <em>Figure 1. Control node kill experiment (30s outage, 0 task loss)</em>
+</p>
+
+* Control killed for **30 seconds**
+* MC agents continued execution **with 0 interruption**
+* Kubernetes HA requires:
+
+  * 3–8s leader election
+  * 10–35s pod recovery
+
+---
+
+## Failure Ratio Test (10 → 60% agent kill)
+<a href="https://github.com/user-attachments/assets/0e304e1e-1650-473f-ad7e-93c91f953451">
+  <img src="https://github.com/user-attachments/assets/0e304e1e-1650-473f-ad7e-93c91f953451" width="450"/>
+</a>
+
+* 100% task completion
 * p95 MTTR ≈ **0.02s**
-* No duplicate execution due to fencing tokens
+* No duplicate execution
 
-### **Scalability Test (50 → 500 agents)**
+---
 
-* MTTR remained in **millisecond range**
+##  Scalability Test (50 → 500 agents)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/72a07d0e-f5f2-4726-97f6-c1a3bb0c169b" width="480"/>
+  <br/>
+</p>
+
+* Millisecond-level reassignment
 * No central bottleneck
-* Kubernetes unable to scale past ~200 agents in identical conditions
+---
 
-### **Recovery Speed**
+##  Summary Table
 
-MC achieved:
+| Experiment                  | Result                                      |
+| --------------------------- | ------------------------------------------- |
+| **Control node kill (30s)** | *0 task loss*, uninterrupted execution      |
+| **Agent failure 60%**       | 100% completion, p95 MTTR ≈ 0.02s           |
+| **Scalability (50 → 500)**  | Millisecond-class reassignment              |
+| **Compared w/ Kubernetes**  | Up to **400× faster failover**, no blackout |
 
-* **96% faster recovery** than Kubernetes
-* Up to **400× faster resumption time**
-* **100% availability** even when 60% of nodes failed simultaneously
+> **Key Insight:**
+> *A fully decentralized architecture can outperform centralized HA systems in both recovery latency and scalability.*
 
 ---
 
-# 📁 Project Structure
+# 6. Quickstart (Minimal Demo)
 
-```
-team-gurumi/mc/
-├── Makefile
-├── go.mod / go.sum
-├── run_experiments1.sh
-├── run_fault_tolerance_benchmark.sh
-├── analyze_metrics.py
-├── agent / control / seeder           # Compiled binaries (to be removed in future cleanup)
-│
-├── cmd/
-│ ├── agent/
-│ ├── control/
-│ ├── seeder/
-│ └── dhtget/
-│
-├── pkg/
-│ ├── agent/
-│ ├── dht/
-│ ├── p2p/
-│ ├── task/
-│ ├── demand/
-│ └── seeder/
-│
-├── Report/
-│ ├── 09-구르미-1차보고서-금채원.pdf
-│ ├── 09-구르미-2차보고서.md
-│ └── images/
-│
-├── experiment_logs/
-│ ├── exp2_agents_100.log
-│ └── exp3_kill_10.log
-│
-└── vendor/
-```
-
----
-
-# ⚙️ Requirements
-
-* PostgreSQL
-* Docker or Kata Runtime
-* Go 1.21+
-* systemd (for remote installation scripts)
-
-### Required Environment Variables
+### Run system
 
 ```bash
-export MC_DB_DSN='postgres://mcuser:mcpw@127.0.0.1:5432/mc?sslmode=disable'
-export MC_DISABLE_AUTH=1
-export DOCKER_HOST=unix:///var/run/docker.sock
+git clone https://github.com/team-gurumi/mc
+cd mc
+docker-compose up -d
 ```
+
+### Expected output (sample)
+
+```
+✔ control started
+✔ seeder started
+✔ agent started
+```
+
+### Submit a task
+
+```bash
+curl -X POST http://localhost:8080/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"image":"busybox","command":["echo","hello from MC"]}'
+```
+
+### List tasks
+
+```bash
+curl http://localhost:8080/api/tasks
+```
+---
+
+# 8. Requirements
+
+* Go 1.21+
+* Docker / Kata Runtime
+* PostgreSQL
+* systemd (for remote install scripts)
 
 ---
 
-# 🌐 Remote Installation Guide
+# 9. Remote Installation & Execution
 
-## Install Control Node
+
+### Install Control
 
 ```bash
 make install-control HOST=ubuntu@control-box PORT=8080 TIMEOUT=180
 ```
 
-## Install Agent Nodes
+### Install Agent
 
 ```bash
 make install-agent HOST=ubuntu@node-1 CONTROL_URL=http://100.70.1.2:8080
 ```
 
-With Kata runtime:
+With Kata:
 
 ```bash
 make install-agent HOST=ubuntu@B CONTROL_URL=http://100.70.1.2:8080 DOCKER_RUNTIME=kata-runtime
 ```
 
-## Logs & Service Control
+### Logs
 
 ```bash
 make agent-restart HOST=ubuntu@node-1
 make logs-agent    HOST=ubuntu@node-1
 ```
 
+
 ---
 
-# 🧪 Local Multi-Node Demo
+# 10. Local Multi-Node Demo
+
 
 The following walkthrough launches Seeder → Control → Agent fully on localhost.
 
@@ -278,23 +358,41 @@ curl -s -X POST http://127.0.0.1:8080/jobs/$JOB/manifest \
 curl -s \
   -H 'Authorization: Bearer dev' \
   http://127.0.0.1:8080/api/tasks/$JOB | jq
+---
+
+# 11. Limitations & Future Work
+
+* Research prototype; not production-hardened
+* No RBAC / multi-tenancy
+* DHT churn optimization
+* Full DAG scheduler planned
+* Multi-DHT federation & malicious-node detection
+
+---
+
+# 12. Citation (Optional)
+
+```
+@project{mutual-cloud-2025,
+  title={Mutual Cloud: A Decentralized Control Plane for SPOF-Free Distributed Task Execution},
+  authors={Gurumi Team},
+  year={2025},
+  institution={Ewha Womans University}
+}
 ```
 
 ---
 
-# 🔚 Summary
+# 🏁 Closing Note
 
-Mutual Cloud brings:
+Mutual Cloud demonstrates:
 
-* **SPOF-free task orchestration**
-* **Fast, autonomous failure recovery**
-* **DHT-based discovery instead of centralized scheduling**
-* **P2P data distribution**
-* **Scalability to hundreds of agents without control-plane load**
+* ✔ Failover without leader election
+* ✔ Correctness without global synchronization
+* ✔ Scalability without a central scheduler
 
-It demonstrates an alternative model to conventional orchestrators, suitable for research in **edge computing, federated clusters, and decentralized control planes**
- 
- 
- 
- 
- 
+It shows that **decentralized control-plane architectures are not only theoretically sound, but practically implementable and empirically superior in failure-heavy environments.**
+
+This project embodies both **research contribution** and **real, reproducible engineering**.
+
+---
