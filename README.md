@@ -235,7 +235,7 @@ curl http://localhost:8080/api/tasks
 ```
 ---
 
-# 8. Requirements
+# 7. Requirements
 
 * Go 1.21+
 * Docker / Kata Runtime
@@ -244,7 +244,7 @@ curl http://localhost:8080/api/tasks
 
 ---
 
-# 9. Remote Installation & Execution
+# 8. Remote Installation & Execution
 
 
 ### Install Control
@@ -275,7 +275,7 @@ make logs-agent    HOST=ubuntu@node-1
 
 ---
 
-# 10. Local Multi-Node Demo
+# 9. Local Multi-Node Demo
 
 
 The following walkthrough launches Seeder → Control → Agent fully on localhost.
@@ -360,7 +360,7 @@ curl -s \
 ```
 ---
 
-# 11. Limitations & Future Work
+# 10. Limitations & Future Work
 
 * Research prototype; not production-hardened
 * No RBAC / multi-tenancy
