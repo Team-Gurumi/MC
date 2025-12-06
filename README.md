@@ -358,6 +358,7 @@ curl -s -X POST http://127.0.0.1:8080/jobs/$JOB/manifest \
 curl -s \
   -H 'Authorization: Bearer dev' \
   http://127.0.0.1:8080/api/tasks/$JOB | jq
+```
 ---
 
 # 11. Limitations & Future Work
@@ -367,7 +368,6 @@ curl -s \
 * DHT churn optimization
 * Full DAG scheduler planned
 * Multi-DHT federation & malicious-node detection
-```
 ---
 
 # 🏁 Closing Note
