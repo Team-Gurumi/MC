@@ -379,3 +379,44 @@ Mutual Cloud demonstrates:
 
 It shows that **decentralized control-plane architectures are not only theoretically sound, but practically implementable and empirically superior in failure-heavy environments.**
 ---
+
+
+# Project Structure (Folded)
+
+
+<details>
+<summary><strong>Project Structure</strong></summary>
+<br>
+
+```
+
+team-gurumi/mc/
+├── Makefile
+├── go.mod / go.sum
+├── docker-compose.yml
+│
+├── cmd/                         # Executable entrypoints
+│   ├── agent/                   # Agent node (task execution, DHT discovery)
+│   ├── control/                 # Control server (HTTP API, metadata writer)
+│   ├── seeder/                  # Seeder node (P2P file provider)
+│   └── dhtget/                  # Debugging utility for DHT lookups
+│
+├── pkg/                         # Core logic shared across components
+│   ├── agent/                   # Task runner, lease mgmt, container execution
+│   ├── dht/                     # Kad-DHT bootstrap & routing logic
+│   ├── p2p/                     # Peer transport abstractions
+│   ├── task/                    # Task structs, key builders, state types
+│   ├── demand/                  # PostgreSQL-backed job storage
+│   └── seeder/                  # Seeder-side logic
+│
+├── Report/                      # Research artifacts & figures
+│   ├── 09-구르미-1차보고서-금채원.pdf
+│   ├── 09-구르미-2차보고서.md
+│   └── images/
+│
+├── experiment_logs/             # Fault-tolerance experiment logs
+└── vendor/                      # Vendored Go dependencies
+
+```
+
+</details>
