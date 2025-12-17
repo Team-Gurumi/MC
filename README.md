@@ -420,3 +420,22 @@ team-gurumi/mc/
 ```
 
 </details>
+
+## 📂 Source Code Description
+
+This project is designed with a modular structure based on Go. The roles of the main directories and packages are as follows:
+
+### `cmd/` (Entry Points)
+Contains the main entry points for the applications.
+- **`cmd/agent/`**: The Agent node that shares computing resources and executes assigned tasks.
+- **`cmd/control/`**: The Control Plane that monitors the cluster status and distributes tasks to appropriate agents.
+- **`cmd/seeder/`**: The Seed node acting as the initial entry point for the P2P network.
+- **`cmd/dhtget/`**: A debugging tool used to query specific key values from the DHT (Distributed Hash Table).
+
+### `pkg/` (Library Packages)
+Contains the core business logic and libraries.
+- **`pkg/dht/`**: Implementation of the Kademlia-based DHT, handling decentralized node discovery and routing.
+- **`pkg/p2p/`**: The P2P networking layer responsible for message exchange, connection management, and stream handling between nodes.
+- **`pkg/task/`**: Handles logic for task definition, scheduling, and state management.
+- **`pkg/demand/`**: Manages resource demands and matching logic.
+- **`pkg/agent/`**: Contains detailed implementations for agent lifecycle management, resource monitoring, etc.
