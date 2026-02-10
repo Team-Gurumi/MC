@@ -1,0 +1,112 @@
++ AGENTS=100
++ TASKS=1000
++ KILL_PERCENT=60
++ ./run_fault_tolerance_benchmark.sh
+==> Checking docker image: alpine:latest
+[INFO] using local image alpine:latest
+### BENCH CONFIG
+NS=mc
+CONTROL_URL=http://127.0.0.1:8080
+AGENTS=100
+TASKS=1000
+HB_SEC=5
+TTL_SEC=20
+KILL_PERCENT=60
+RUNTIME_BEFORE_KILL=2s
+POST_KILL_OBSERVE=800s
+DOCKER_IMAGE=alpine:latest
+Artifacts: bench_artifacts/20251107-205610
+==> Starting control @ http://127.0.0.1:8080
+==> Using bootstrap: /ip4/127.0.0.1/tcp/44205/p2p/12D3KooWDpmmCAjGJ53oWm3QSrkG7BgYsNatXvFszCGRxCiBpFdM
+==> Spawning 100 agents
+agents started: 100
+==> Submitting 1000 tasks
+  submitted: 100
+  submitted: 200
+  submitted: 300
+  submitted: 400
+  submitted: 500
+  submitted: 600
+  submitted: 700
+  submitted: 800
+  submitted: 900
+  submitted: 1000
+==> Sleeping 2s
+==> SIGKILL 60/100 agents
+./run_fault_tolerance_benchmark.sh: 줄 250: 2045631 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 250: 2045760 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 250: 2045784 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 250: 2045966 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 250: 2046544 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+==> Observing 800s
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045483 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045505 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045517 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045529 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045574 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045585 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045596 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045607 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045654 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045666 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045689 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045715 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045749 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045772 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045795 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045807 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045819 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045850 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045862 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045872 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045920 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045943 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045955 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2045978 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046002 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046022 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046036 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046068 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046102 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046115 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046123 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046134 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046147 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046181 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046193 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046226 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046259 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046281 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046292 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046304 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046328 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046340 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046374 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046386 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046397 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046420 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046454 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046487 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046498 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046510 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046556 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046568 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046579 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046601 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+./run_fault_tolerance_benchmark.sh: 줄 252: 2046613 죽었음               ( env PATH="${PATH}" HOME="${HOME}" HB_SEC="${HB_SEC}" TTL_SEC="${TTL_SEC}" MC_NS="${NS}" "${EXTRA_ENV[@]}" ./agent -ns "${NS}" -control-url "${CONTROL_URL}" -auth-token "${CONTROL_TOKEN}" -bootstrap "${BOOTSTRAP}" ${AGENT_FLAGS} >> "${LOG}" 2>&1 )
+==> Stopping remaining agents
+==> Running metrics analyzer
+# Benchmark Report (API-based)
+
+- total tasks: 1000
+- completed: 1000
+- success_rate: 100.0000%
+- status breakdown:
+  - succeeded: 1000
+- MTTR p50: 0.0002s  (target ≤ 120s)
+- MTTR p95: 11.0507s  (target ≤ 180s)
+- duplicate execution rate: 0.0000%  (target ≤ 1%)
+- false recall rate: 0.0000%  (target ≤ 0.5%)
+==> Truncating demand_jobs
+TRUNCATE TABLE
+==> DONE. See bench_artifacts/20251107-205610
