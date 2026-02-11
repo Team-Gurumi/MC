@@ -76,14 +76,14 @@ func main() {
 	listIDs := func() []string { return agent.ListFromIndex(d, *ns) }
 
 	onCandidate := func(jobID string, providers []task.Provider, demandURL string) {
-    // 1) 이 잡에 대해 사용할 베이스 URL을 정한다.
-    base := *controlURL
-    if demandURL != "" {
-        base = demandURL
-    }
-    // claim 이랑 finish 둘 다 같은 베이스를 쓰도록 맞춘다.
-    claim.BaseURL = base
-    finish.BaseURL = base
+		// 1) 이 잡에 대해 사용할 베이스 URL을 정한다.
+		base := *controlURL
+		if demandURL != "" {
+			base = demandURL
+		}
+		// claim 이랑 finish 둘 다 같은 베이스를 쓰도록 맞춘다.
+		claim.BaseURL = base
+		finish.BaseURL = base
 
 		// 1) try-claim
 		ctx2, cancel := context.WithTimeout(context.Background(), 4*time.Second)
@@ -91,14 +91,14 @@ func main() {
 
 		lease, err := claim.TryClaim(ctx2, jobID, agentID, leaseTTL)
 		if err != nil {
-		
+
 			return
 		}
-if manWait, err := agent.WaitForManifest(context.Background(), *controlURL, token, jobID, 15*time.Second); err == nil {
-    log.Printf("[agent] manifest ready for job=%s (root_cid=%s)", jobID, manWait.RootCID)
-} else {
-    log.Printf("[agent] manifest wait timeout for job=%s: %v", jobID, err)
-}
+		if manWait, err := agent.WaitForManifest(context.Background(), *controlURL, token, jobID, 15*time.Second); err == nil {
+			log.Printf("[agent] manifest ready for job=%s (root_cid=%s)", jobID, manWait.RootCID)
+		} else {
+			log.Printf("[agent] manifest wait timeout for job=%s: %v", jobID, err)
+		}
 		log.Printf("[agent] 작업 점유 성공 job=%s ver=%d exp=%s",
 			jobID, lease.Version, lease.Expires.Format(time.RFC3339))
 		log.Printf(`{"event":"lease_acquired","timestamp":"%s","job_id":"%s","agent_id":"%s"}`,
@@ -204,7 +204,7 @@ if manWait, err := agent.WaitForManifest(context.Background(), *controlURL, toke
 		}
 
 		// 5) 실행
-		res, runErr := agent.RunInContainer(context.Background(), workDir, meta.Image, meta.Command)
+		res, runErr := agent.RunInContainer(jobCtx, workDir, meta.Image, meta.Command)
 
 		// 하트비트 종료
 		cancelJob()
@@ -229,41 +229,41 @@ if manWait, err := agent.WaitForManifest(context.Background(), *controlURL, toke
 		}
 
 		// 6) 종료 보고 (재시도 포함)
-const maxFinishRetries = 20           // 최대 시도 횟수
-const finishRetryDelay = 5 * time.Second // 각 시도 간격
+		const maxFinishRetries = 20              // 최대 시도 횟수
+		const finishRetryDelay = 5 * time.Second // 각 시도 간격
 
-var lastErr error
-for attempt := 1; attempt <= maxFinishRetries; attempt++ {
-    err := finish.Report(
-        context.Background(),
-        jobID,
-        status,
-        metrics,
-        "",
-        nil,
-        errMsg,
-        agentID,
-        leaseToken,
-    )
-    if err == nil {
-        log.Printf("[agent] finish reported job=%s status=%s (attempt %d)", jobID, status, attempt)
-        lastErr = nil
-        break
-    }
-    lastErr = err
+		var lastErr error
+		for attempt := 1; attempt <= maxFinishRetries; attempt++ {
+			err := finish.Report(
+				context.Background(),
+				jobID,
+				status,
+				metrics,
+				"",
+				nil,
+				errMsg,
+				agentID,
+				leaseToken,
+			)
+			if err == nil {
+				log.Printf("[agent] finish reported job=%s status=%s (attempt %d)", jobID, status, attempt)
+				lastErr = nil
+				break
+			}
+			lastErr = err
 
-    if !agent.ShouldRetryFinish(err) {
-        log.Printf("[agent] finish report failed (non-retryable) job=%s: %v", jobID, err)
-        break
-    }
+			if !agent.ShouldRetryFinish(err) {
+				log.Printf("[agent] finish report failed (non-retryable) job=%s: %v", jobID, err)
+				break
+			}
 
-    log.Printf("[agent] finish report retry %d/%d for job=%s: %v", attempt, maxFinishRetries, jobID, err)
-    time.Sleep(finishRetryDelay)
-}
+			log.Printf("[agent] finish report retry %d/%d for job=%s: %v", attempt, maxFinishRetries, jobID, err)
+			time.Sleep(finishRetryDelay)
+		}
 
-if lastErr != nil {
-    log.Printf("[agent] finish report failed after %d attempts job=%s: %v", maxFinishRetries, jobID, lastErr)
-}
+		if lastErr != nil {
+			log.Printf("[agent] finish report failed after %d attempts job=%s: %v", maxFinishRetries, jobID, lastErr)
+		}
 
 	}
 
@@ -295,4 +295,3 @@ func initDHTNode(ctx context.Context, ns, bootstrapPeers string) (*dhtnode.Node,
 	}
 	return node, nil
 }
-

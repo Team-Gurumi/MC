@@ -25,28 +25,29 @@ type AnnounceManager struct {
 	mu       sync.Mutex
 	dirty    map[string]struct{}
 	last     map[string]time.Time
+	trigger  chan struct{}
 }
-
 
 func NewAnnounceManager(d *dhtnode.Node, ns string, ttl, interval time.Duration) *AnnounceManager {
 	return &AnnounceManager{
 		d:        d,
-		ns:       ns, 
+		ns:       ns,
 		ttl:      ttl,
 		interval: interval,
 		dirty:    make(map[string]struct{}),
 		last:     make(map[string]time.Time),
+		trigger:  make(chan struct{}, 1),
 	}
 }
 func (m *AnnounceManager) Enqueue(id string) {
 	m.mu.Lock()
 	m.dirty[id] = struct{}{}
 	m.mu.Unlock()
-	
-	
-	go m.announceOnce(context.Background(), id)
-		
-	
+
+	select {
+	case m.trigger <- struct{}{}:
+	default:
+	}
 }
 
 func (m *AnnounceManager) announceOnce(ctx context.Context, id string) {
@@ -74,30 +75,46 @@ func (m *AnnounceManager) announceOnce(ctx context.Context, id string) {
 	m.mu.Unlock()
 }
 
-
 func (m *AnnounceManager) Run(ctx context.Context) {
 	ticker := time.NewTicker(m.interval)
 	defer ticker.Stop()
+
+	process := func() {
+		m.mu.Lock()
+		ids := make([]string, 0, len(m.dirty))
+		now := time.Now().UTC()
+		for id := range m.dirty {
+			last := m.last[id]
+			if last.IsZero() || now.Sub(last) >= m.interval {
+				ids = append(ids, id)
+			}
+		}
+		// 처리할 것들은 dirty에서 빼줘야 함, 아니면 계속 쌓임
+		// (원래 코드에서는 dirty를 제거하는 로직이 없었음 -> 하지만 원래는 Enqueue할 때마다 announceOnce했으므로 dirty가 그냥 '최근에 요청된 것' 의미였을 수 있음)
+		// 하지만 'announceOnce'는 state를 변경하지 않음.
+		// 여기서는 dirtyMap에 있는 것 중 interval 지난 것을 처리함.
+		// 처리 후 dirty에서 제거해야 하나?
+		// 원래 로직: ticker 돌 때 dirty에 있는 것 중 interval 지난 것 다시 announce.
+		// 근데 dirty에서 언제 제거되지? 원래 코드에선 제거 로직이 없음 -> 메모리 릭??
+		// 아뇨, dirty는 map[string]struct{}입니다. id가 계속 쌓이면 메모리 릭 맞습니다.
+		// 하지만 여기선 "minimal patch"를 요구했으므로, unbounded goroutine만 고칩니다.
+		// "dirty"의 의미: "재광고가 필요한 후보군 + 최초 광고 요청"
+		// 일단 기존 로직(dirty 순회)을 그대로 유지하되, goroutine spawn만 막습니다.
+		m.mu.Unlock()
+
+		for _, id := range ids {
+			m.announceOnce(ctx, id)
+		}
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			m.mu.Lock()
-			ids := make([]string, 0, len(m.dirty))
-			now := time.Now().UTC()
-			for id := range m.dirty {
-				last := m.last[id]
-				if last.IsZero() || now.Sub(last) >= m.interval {
-					ids = append(ids, id)
-				}
-			}
-			m.mu.Unlock()
-
-			for _, id := range ids {
-				m.announceOnce(ctx, id)
-			}
+			process()
+		case <-m.trigger:
+			process()
 		}
 	}
 }
@@ -175,63 +192,63 @@ func restoreJobsFromDemand(ctx context.Context, store demand.Store, d *dhtnode.N
 const maxRetry = 5
 
 func requeueLoop(ctx context.Context, store demand.Store, d *dhtnode.Node, ns string, mgr *AnnounceManager) {
-    ticker := time.NewTicker(500 * time.Millisecond)
-    defer ticker.Stop()
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
 
-    for {
-        select {
-        case <-ctx.Done():
-            return
-        case <-ticker.C:
-            now := time.Now().UTC()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now().UTC()
 
-            // 만료된 지 3초 이상 지난 작업만 재큐잉한다
-            expired, err := store.ListExpiredLeases(ctx, now.Add(-3*time.Second))
-            if err != nil {
-                log.Printf("[requeue] list expired failed: %v", err)
-                continue
-            }
+			// 만료된 지 3초 이상 지난 작업만 재큐잉한다
+			expired, err := store.ListExpiredLeases(ctx, now.Add(-3*time.Second))
+			if err != nil {
+				log.Printf("[requeue] list expired failed: %v", err)
+				continue
+			}
 
-            for _, id := range expired {
-                if err := store.SetStatusQueued(ctx, id); err != nil {
-                    log.Printf("[requeue] expired -> queued err id=%s: %v", id, err)
-                    continue
-                }
-                log.Printf(`{"event":"lease_expired","timestamp":"%s","job_id":"%s"}`,
-        time.Now().UTC().Format(time.RFC3339Nano), id)
+			for _, id := range expired {
+				if err := store.SetStatusQueued(ctx, id); err != nil {
+					log.Printf("[requeue] expired -> queued err id=%s: %v", id, err)
+					continue
+				}
+				log.Printf(`{"event":"lease_expired","timestamp":"%s","job_id":"%s"}`,
+					time.Now().UTC().Format(time.RFC3339Nano), id)
 
-                // DHT에 있는 lease/state도 정리
-                _ = d.DelJSON(task.KeyLease(id))
-                updateDHTStateQueued(d, id, now)
-                mgr.Enqueue(id)
-            }
-        }
-    }
+				// DHT에 있는 lease/state도 정리
+				_ = d.DelJSON(task.KeyLease(id))
+				updateDHTStateQueued(d, id, now)
+				mgr.Enqueue(id)
+			}
+		}
+	}
 }
+
 // DB에 queued로만 남아 있는 잡들을 주기적으로 다시 DHT에 광고
 func reannounceQueuedLoop(ctx context.Context, store demand.Store, mgr *AnnounceManager) {
-    ticker := time.NewTicker(5 * time.Second) // 주기는 필요하면 줄여
-    defer ticker.Stop()
+	ticker := time.NewTicker(5 * time.Second) // 주기는 필요하면 줄여
+	defer ticker.Stop()
 
-    for {
-        select {
-        case <-ctx.Done():
-            return
-        case <-ticker.C:
-            // DB에서 아직 queued인 애들 전부 가져옴
-            jobs, err := store.ListQueued(ctx)
-            if err != nil {
-                log.Printf("[reannounce] list queued failed: %v", err)
-                continue
-            }
-            for _, j := range jobs {
-                // 그냥 다시 광고 큐에 넣어주면 AnnounceManager가 DHT에 다시 올림
-                mgr.Enqueue(j.ID)
-            }
-        }
-    }
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// DB에서 아직 queued인 애들 전부 가져옴
+			jobs, err := store.ListQueued(ctx)
+			if err != nil {
+				log.Printf("[reannounce] list queued failed: %v", err)
+				continue
+			}
+			for _, j := range jobs {
+				// 그냥 다시 광고 큐에 넣어주면 AnnounceManager가 DHT에 다시 올림
+				mgr.Enqueue(j.ID)
+			}
+		}
+	}
 }
-
 
 func updateDHTStateQueued(d *dhtnode.Node, id string, now time.Time) {
 	var st task.TaskState
@@ -306,7 +323,6 @@ func main() {
 	go requeueLoop(ctx, store, node, *ns, mgr)
 	go reannounceQueuedLoop(ctx, store, mgr)
 
-
 	mux := mountHTTP(node, store, *ns, mgr.Enqueue)
 	addr := fmt.Sprintf(":%d", *httpPort)
 	srv := &http.Server{Addr: addr, Handler: mux}
@@ -368,5 +384,3 @@ func splitCSV(s string) []string {
 	}
 	return out
 }
-
-
