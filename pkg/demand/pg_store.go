@@ -38,12 +38,16 @@ func (s *PGStore) CreateJob(ctx context.Context, job DBJob) error {
 	if err != nil {
 		return err
 	}
+	metricsJSON, err := toJSON(job.Metrics)
+	if err != nil {
+		return err
+	}
 
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO demand_jobs (id, image, command, status, created_at)
-		VALUES ($1, $2, $3, $4, COALESCE($5, now()))
+		INSERT INTO demand_jobs (id, image, command, status, created_at, metrics)
+		VALUES ($1, $2, $3, $4, COALESCE($5, now()), $6)
 		ON CONFLICT (id) DO NOTHING
-	`, job.ID, job.Image, cmdJSON, job.Status, job.CreatedAt)
+	`, job.ID, job.Image, cmdJSON, job.Status, job.CreatedAt, metricsJSON)
 	return err
 }
 
@@ -191,24 +195,79 @@ func (s *PGStore) Finish(
 	if err != nil {
 		return err
 	}
+	if string(metricsJSON) == "null" {
+		metricsJSON = []byte("{}")
+	}
 	status := "failed"
 	if succeeded {
 		status = "succeeded"
 	}
 
-	_, err = s.db.ExecContext(ctx, `
+	res, err := s.db.ExecContext(ctx, `
 		UPDATE demand_jobs
 		   SET status           = $4,
 		       result_root_cid  = $5,
 		       artifacts        = $6,
-		       metrics          = $7,
+		       metrics          = COALESCE(metrics, '{}'::jsonb) || COALESCE($7::jsonb, '{}'::jsonb),
 		       lease_agent      = NULL,
 		       lease_expires_at = NULL
 		 WHERE id = $1
+		   AND NOT (
+			 status = 'failed'
+			 AND COALESCE(metrics->>'reason', '') IN ('run_timeout', 'queued_timeout')
+		   )
 		   AND (lease_agent = $2 OR lease_agent IS NULL)
 		   AND lease_token <= $3
 	`, id, agentID, int64(token), status, resultCID, artsJSON, metricsJSON)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		return nil
+	}
+
+	var (
+		curStatus string
+		reason    sql.NullString
+	)
+	row := s.db.QueryRowContext(ctx, `
+		SELECT status, metrics->>'reason'
+		  FROM demand_jobs
+		 WHERE id = $1
+	`, id)
+	if err := row.Scan(&curStatus, &reason); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrJobNotFound
+		}
+		return err
+	}
+	if curStatus == "failed" && reason.Valid && (reason.String == "run_timeout" || reason.String == "queued_timeout") {
+		return ErrLateFinish
+	}
+	return ErrBadToken
+}
+
+func (s *PGStore) MergeMetrics(ctx context.Context, id string, patch map[string]any) error {
+	patchJSON, err := toJSON(patch)
+	if err != nil {
+		return err
+	}
+	if string(patchJSON) == "null" {
+		patchJSON = []byte("{}")
+	}
+
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE demand_jobs
+		   SET metrics = COALESCE(metrics, '{}'::jsonb) || COALESCE($2::jsonb, '{}'::jsonb)
+		 WHERE id = $1
+	`, id, patchJSON)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrJobNotFound
+	}
+	return nil
 }
 
 // 7) 만료된 lease 목록
@@ -237,7 +296,7 @@ func (s *PGStore) ListExpiredLeases(ctx context.Context, now time.Time) ([]strin
 }
 
 func (s *PGStore) SetStatusQueued(ctx context.Context, id string) error {
-    res, err := s.db.ExecContext(ctx, `
+	res, err := s.db.ExecContext(ctx, `
         UPDATE demand_jobs
            SET status = 'queued',
                lease_agent = NULL,
@@ -248,15 +307,14 @@ func (s *PGStore) SetStatusQueued(ctx context.Context, id string) error {
            AND lease_expires_at IS NOT NULL
            AND lease_expires_at < now()
     `, id)
-    if err != nil {
-        return err
-    }
-    if n, _ := res.RowsAffected(); n == 0 {
-        return ErrJobNotFound
-    }
-    return nil
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrJobNotFound
+	}
+	return nil
 }
-
 
 func (s *PGStore) ListQueued(ctx context.Context) ([]DBJob, error) {
 	rows, err := s.db.QueryContext(ctx, `
@@ -409,3 +467,83 @@ func (s *PGStore) CountByStatus(ctx context.Context) (map[JobStatus]int64, error
 	return out, nil
 }
 
+func (s *PGStore) ListRunIDsExceeded(ctx context.Context, runTimeoutSec int) ([]string, error) {
+	if runTimeoutSec <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT run_id
+		  FROM (
+			SELECT
+				metrics->>'run_id' AS run_id,
+				MIN(COALESCE((metrics->>'submit_ts')::timestamptz, created_at)) AS oldest_submit
+			FROM demand_jobs
+			WHERE status IN ('queued', 'assigned', 'running')
+			  AND COALESCE(metrics->>'run_id', '') <> ''
+			GROUP BY metrics->>'run_id'
+		  ) t
+		 WHERE now() > oldest_submit + ($1 || ' seconds')::interval
+	`, runTimeoutSec)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var runIDs []string
+	for rows.Next() {
+		var runID string
+		if err := rows.Scan(&runID); err != nil {
+			return nil, err
+		}
+		runIDs = append(runIDs, runID)
+	}
+	return runIDs, nil
+}
+
+func (s *PGStore) FailActiveByRunID(ctx context.Context, runID string, reason string) (int64, error) {
+	if runID == "" {
+		return 0, nil
+	}
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE demand_jobs
+		   SET status           = 'failed',
+		       lease_agent      = NULL,
+		       lease_expires_at = NULL,
+		       metrics          = COALESCE(metrics, '{}'::jsonb) ||
+		                          jsonb_build_object(
+		                            'reason', $2,
+		                            'timeout_ts', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+		                          )
+		 WHERE status IN ('queued', 'assigned', 'running')
+		   AND metrics->>'run_id' = $1
+	`, runID, reason)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+func (s *PGStore) FailQueuedTimedOut(ctx context.Context, queuedTimeoutSec int, reason string) (int64, error) {
+	if queuedTimeoutSec <= 0 {
+		return 0, nil
+	}
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE demand_jobs
+		   SET status           = 'failed',
+		       lease_agent      = NULL,
+		       lease_expires_at = NULL,
+		       metrics          = COALESCE(metrics, '{}'::jsonb) ||
+		                          jsonb_build_object(
+		                            'reason', $2::text,
+		                            'timeout_ts', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+		                          )
+		 WHERE status = 'queued'
+		   AND now() > COALESCE((metrics->>'submit_ts')::timestamptz, created_at) + ($1::int * interval '1 second')
+	`, queuedTimeoutSec, reason)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}

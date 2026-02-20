@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -281,6 +282,67 @@ func snapshotLoop(store demand.Store) {
 	}
 }
 
+func envInt(name string, def int) int {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
+}
+
+func queuedTimeoutLoop(ctx context.Context, store demand.Store, sec int) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			n, err := store.FailQueuedTimedOut(ctx, sec, "queued_timeout")
+			if err != nil {
+				log.Printf("[timeout] queued-timeout check failed: %v", err)
+				continue
+			}
+			if n > 0 {
+				log.Printf("[timeout] queued_timeout applied jobs=%d", n)
+			}
+		}
+	}
+}
+
+func runTimeoutLoop(ctx context.Context, store demand.Store, sec int) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			runIDs, err := store.ListRunIDsExceeded(ctx, sec)
+			if err != nil {
+				log.Printf("[timeout] run-timeout scan failed: %v", err)
+				continue
+			}
+			for _, runID := range runIDs {
+				n, err := store.FailActiveByRunID(ctx, runID, "run_timeout")
+				if err != nil {
+					log.Printf("[timeout] run_timeout update failed run_id=%s: %v", runID, err)
+					continue
+				}
+				if n > 0 {
+					log.Printf("[timeout] run_timeout applied run_id=%s jobs=%d", runID, n)
+				}
+			}
+		}
+	}
+}
+
 func main() {
 	var (
 		ns        = flag.String("ns", "mc", "DHT namespace prefix")
@@ -322,6 +384,8 @@ func main() {
 	restoreJobsFromDemand(ctx, store, node, *ns, mgr)
 	go requeueLoop(ctx, store, node, *ns, mgr)
 	go reannounceQueuedLoop(ctx, store, mgr)
+	go queuedTimeoutLoop(ctx, store, envInt("QUEUED_TIMEOUT_SEC", 180))
+	go runTimeoutLoop(ctx, store, envInt("RUN_TIMEOUT_SEC", 600))
 
 	mux := mountHTTP(node, store, *ns, mgr.Enqueue)
 	addr := fmt.Sprintf(":%d", *httpPort)
@@ -360,6 +424,12 @@ func main() {
 				Command:   cmd,
 				Status:    demand.StatusQueued,
 				CreatedAt: time.Now().UTC(),
+				Metrics: map[string]any{
+					"submit_ts":     time.Now().UTC().Format(time.RFC3339),
+					"run_id":        id,
+					"ttl_sec":       15,
+					"heartbeat_sec": 5,
+				},
 			})
 
 			// ★ 여기서도 즉시 광고

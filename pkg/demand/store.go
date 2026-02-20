@@ -16,14 +16,14 @@ const (
 	StatusFailed    JobStatus = "failed"
 )
 
-
 type DBJob struct {
-	ID        string
-	Image     string
-	Command   []string
-	Status    JobStatus
-	CreatedAt time.Time
+	ID         string
+	Image      string
+	Command    []string
+	Status     JobStatus
+	CreatedAt  time.Time
 	RetryCount int
+	Metrics    map[string]any
 }
 
 // manifest 정보
@@ -67,19 +67,23 @@ type Store interface {
 		metrics any,
 	) error
 
+	// Merge partial metrics into demand_jobs.metrics JSONB.
+	MergeMetrics(ctx context.Context, id string, patch map[string]any) error
+
 	// 재큐잉 루프용
 	ListExpiredLeases(ctx context.Context, now time.Time) ([]string, error)
 	SetStatusQueued(ctx context.Context, id string) error
-	 // 컨트롤이 재기동할 때 queued 잡들을 다시 광고하려고 쓴다
-    ListQueued(ctx context.Context) ([]DBJob, error)
-    ListManifestMissingSince(ctx context.Context, cutoff time.Time) ([]string, error)
-    ListAll(ctx context.Context) ([]DBJob, error)
-    
+	// 컨트롤이 재기동할 때 queued 잡들을 다시 광고하려고 쓴다
+	ListQueued(ctx context.Context) ([]DBJob, error)
+	ListManifestMissingSince(ctx context.Context, cutoff time.Time) ([]string, error)
+	ListAll(ctx context.Context) ([]DBJob, error)
 
 	ListPaged(ctx context.Context, limit, offset int) ([]DBJob, error)
 
 	CountByStatus(ctx context.Context) (map[JobStatus]int64, error)
-
+	ListRunIDsExceeded(ctx context.Context, runTimeoutSec int) ([]string, error)
+	FailActiveByRunID(ctx context.Context, runID string, reason string) (int64, error)
+	FailQueuedTimedOut(ctx context.Context, queuedTimeoutSec int, reason string) (int64, error)
 }
 
 // 공통 에러
@@ -88,9 +92,9 @@ var (
 	ErrNoManifest    = Err("manifest not attached")
 	ErrLeaseConflict = Err("lease still valid")
 	ErrBadToken      = Err("fencing token mismatch")
+	ErrLateFinish    = Err("late finish rejected after timeout")
 )
 
 type Err string
 
 func (e Err) Error() string { return string(e) }
-

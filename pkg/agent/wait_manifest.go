@@ -31,7 +31,15 @@ func WaitForManifest(ctx context.Context, baseURL, token, taskID string, maxWait
 			}
 			if err := json.NewDecoder(resp.Body).Decode(&out); err == nil {
 				resp.Body.Close()
-				if out.Manifest != nil && out.Manifest.RootCID != "" && len(out.Manifest.Providers) > 0 {
+				// Skip waiting when manifest is intentionally absent or noop.
+				// This keeps CPU-only jobs from paying the 15s polling timeout.
+				if out.Manifest == nil || out.Manifest.RootCID == "" {
+					return &task.Manifest{RootCID: "noop"}, nil
+				}
+				if out.Manifest.RootCID == "noop" {
+					return out.Manifest, nil
+				}
+				if len(out.Manifest.Providers) > 0 {
 					return out.Manifest, nil
 				}
 			} else {

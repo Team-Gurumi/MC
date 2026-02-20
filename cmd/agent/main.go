@@ -110,7 +110,7 @@ func main() {
 		jobCtx, cancelJob := context.WithCancel(context.Background())
 
 		// 2) 하트비트 고루틴
-		go func(taskID, nonce string, leaseTok int64) {
+		go func(taskID, nonce string, leaseTok int64, stopJob context.CancelFunc) {
 			defer log.Printf("[agent] job=%s heartbeat 종료", taskID)
 
 			t := time.NewTicker(hbEvery)
@@ -127,6 +127,8 @@ func main() {
 					if _, err := claim.Heartbeat(context.Background(), taskID, agentID, nonce, leaseTTL, leaseTok); err != nil {
 						fail++
 						if fail >= maxFail {
+							// Lease was likely revoked (e.g. timeout); cancel running container context.
+							stopJob()
 							return
 						}
 						continue
@@ -134,7 +136,7 @@ func main() {
 					fail = 0
 				}
 			}
-		}(jobID, lease.Nonce, leaseToken)
+		}(jobID, lease.Nonce, leaseToken, cancelJob)
 
 		// 3) manifest 확인
 		var man task.Manifest
@@ -204,7 +206,9 @@ func main() {
 		}
 
 		// 5) 실행
+		execStart := time.Now().UTC()
 		res, runErr := agent.RunInContainer(jobCtx, workDir, meta.Image, meta.Command)
+		execEnd := time.Now().UTC()
 
 		// 하트비트 종료
 		cancelJob()
@@ -219,14 +223,23 @@ func main() {
 		}
 
 		metrics := map[string]any{}
+		completionOK := false
 		if res != nil {
 			metrics = map[string]any{
-				"exit_code":    res.ExitCode,
-				"duration_ms":  res.Duration.Milliseconds(),
-				"stdout_bytes": len(res.Stdout),
-				"stderr_bytes": len(res.Stderr),
+				"exit_code":     res.ExitCode,
+				"duration_ms":   res.Duration.Milliseconds(),
+				"stdout_bytes":  len(res.Stdout),
+				"stderr_bytes":  len(res.Stderr),
+				"exec_start_ts": execStart.Format(time.RFC3339),
+				"exec_end_ts":   execEnd.Format(time.RFC3339),
 			}
+			completionOK = (res.ExitCode == 0)
 		}
+		if res == nil {
+			metrics["exec_start_ts"] = execStart.Format(time.RFC3339)
+			metrics["exec_end_ts"] = execEnd.Format(time.RFC3339)
+		}
+		metrics["completion_ok"] = completionOK
 
 		// 6) 종료 보고 (재시도 포함)
 		const maxFinishRetries = 20              // 최대 시도 횟수
@@ -247,6 +260,21 @@ func main() {
 			)
 			if err == nil {
 				log.Printf("[agent] finish reported job=%s status=%s (attempt %d)", jobID, status, attempt)
+				taskSucceeded, derr := finish.IsTaskSucceeded(context.Background(), jobID)
+				deliveryOK := derr == nil && taskSucceeded
+				success := completionOK && deliveryOK
+
+				_ = finish.PatchMetrics(
+					context.Background(),
+					jobID,
+					map[string]any{
+						"finish_reported_ts": time.Now().UTC().Format(time.RFC3339),
+						"delivery_ok":        deliveryOK,
+						"success":            success,
+					},
+					agentID,
+					leaseToken,
+				)
 				lastErr = nil
 				break
 			}

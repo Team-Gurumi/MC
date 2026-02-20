@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"  
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -16,6 +16,7 @@ type FinishClient struct {
 }
 
 type httpError struct{ Status string }
+
 func (e *httpError) Error() string { return e.Status }
 func (c *FinishClient) post(ctx context.Context, path string, in any, agentID string, leaseToken int64) error {
 	b, _ := json.Marshal(in)
@@ -32,24 +33,23 @@ func (c *FinishClient) post(ctx context.Context, path string, in any, agentID st
 	}
 
 	res, err := c.Client.Do(req)
-if err != nil {
-    // network-ish error: let caller decide to retry
-    return fmt.Errorf("finish http request failed: %w", err)
-}
-defer res.Body.Close()
+	if err != nil {
+		// network-ish error: let caller decide to retry
+		return fmt.Errorf("finish http request failed: %w", err)
+	}
+	defer res.Body.Close()
 
-// 5xx -> temporary, can retry
-if res.StatusCode >= 500 {
-    return fmt.Errorf("finish http server error: %d", res.StatusCode)
-}
-// 4xx -> client or logical error, do not retry
-if res.StatusCode >= 400 {
-    return fmt.Errorf("finish http client error: %d", res.StatusCode)
-}
-return nil
+	// 5xx -> temporary, can retry
+	if res.StatusCode >= 500 {
+		return fmt.Errorf("finish http server error: %d", res.StatusCode)
+	}
+	// 4xx -> client or logical error, do not retry
+	if res.StatusCode >= 400 {
+		return fmt.Errorf("finish http client error: %d", res.StatusCode)
+	}
+	return nil
 
 }
-
 
 // ShouldRetryFinish reports whether a finish error is worth retrying.
 // We only retry for network problems or 5xx.
@@ -71,20 +71,51 @@ func ShouldRetryFinish(err error) bool {
 	return false
 }
 func (c *FinishClient) Report(ctx context.Context, jobID string, status string,
-    metrics map[string]any, resultCID string, artifacts []string, errMsg string,
-    agentID string, leaseToken int64,) error {
+	metrics map[string]any, resultCID string, artifacts []string, errMsg string,
+	agentID string, leaseToken int64) error {
 
-    body := map[string]any{
-        "status":          status,
-        "metrics":         metrics,
-        "result_root_cid": resultCID,
-        "artifacts":       artifacts,
-    }
-    if errMsg != "" {
-        body["error"] = errMsg
-    }
+	body := map[string]any{
+		"status":          status,
+		"metrics":         metrics,
+		"result_root_cid": resultCID,
+		"artifacts":       artifacts,
+	}
+	if errMsg != "" {
+		body["error"] = errMsg
+	}
 
-    return c.post(ctx, "/jobs/"+jobID+"/finish", body, agentID, leaseToken)
+	return c.post(ctx, "/jobs/"+jobID+"/finish", body, agentID, leaseToken)
 
 }
 
+func (c *FinishClient) PatchMetrics(ctx context.Context, jobID string, patch map[string]any, agentID string, leaseToken int64) error {
+	return c.post(ctx, "/api/tasks/"+jobID+"/metrics", patch, agentID, leaseToken)
+}
+
+func (c *FinishClient) IsTaskSucceeded(ctx context.Context, jobID string) (bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/api/tasks/"+jobID, nil)
+	if err != nil {
+		return false, err
+	}
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	res, err := c.Client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode/100 != 2 {
+		return false, fmt.Errorf("task status http error: %d", res.StatusCode)
+	}
+
+	var out struct {
+		State struct {
+			Status string `json:"status"`
+		} `json:"state"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return false, err
+	}
+	return strings.EqualFold(out.State.Status, "succeeded"), nil
+}
