@@ -1,10 +1,3 @@
-DO $$
-BEGIN
-  IF length(trim(:'job_prefix')) = 0 THEN
-    RAISE EXCEPTION 'job_prefix must be non-empty';
-  END IF;
-END $$;
-
 WITH scope AS (
   SELECT
     j.id,
@@ -36,26 +29,33 @@ WITH scope AS (
        AND (j.metrics->>'exit_code') ~ '^-?[0-9]+$'
       THEN (j.metrics->>'exit_code')::int
       ELSE NULL
-    END AS exit_code
+    END AS exit_code,
+    COALESCE((j.metrics->>'success')::boolean, false) AS success_flag
   FROM demand_jobs j
   WHERE j.id LIKE :'job_prefix' || '%'
 ),
 durations AS (
+  -- duration_ms = execution latency only (container runtime)
   SELECT duration_ms
   FROM scope
-  WHERE duration_ms IS NOT NULL
+  WHERE status = 'succeeded'
+    AND success_flag = true
+    AND duration_ms IS NOT NULL
 ),
 e2e_durations AS (
+  -- e2e_ms = submit->finish latency (includes queue/lease/TTL wait)
   SELECT e2e_ms
   FROM scope
-  WHERE e2e_ms IS NOT NULL
+  WHERE status = 'succeeded'
+    AND success_flag = true
+    AND e2e_ms IS NOT NULL
 ),
 agg AS (
   SELECT
     COUNT(*)::bigint AS total_jobs,
     COUNT(*) FILTER (
       WHERE status = 'succeeded'
-        AND (exit_code IS NULL OR exit_code = 0)
+        AND success_flag = true
     )::bigint AS succeeded_jobs,
     COALESCE(AVG(attempt_no::numeric), 0)::numeric AS avg_attempts,
     COALESCE(MAX(attempt_no), 0)::int AS max_attempts,

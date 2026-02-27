@@ -19,14 +19,13 @@ All defaults are in `config.sh` and can be overridden by environment variables.
 
 ```bash
 export CONTROL_URL="http://127.0.0.1:8080"
-export MC_DB_DSN="postgres://mcuser:mcpw@127.0.0.1:5432/mc?sslmode=disable"
+export MC_DB_DSN="postgres://mc:mcpass@127.0.0.1:5432/mcdb?sslmode=disable"
 export CONTROL_TOKEN="dev"        # optional
-export AGENTS=10
-export FAILURE_RATE=20
-export TTL_SEC=15
-export HEARTBEAT_SEC=5
-export AGENT_PIDS_FILE="/path/to/agents.pids"   # required when FAILURE_RATE>0
+export TTL_SEC=10
+export HEARTBEAT_SEC=3
 export FAILURE_INJECT_DELAY_SEC=5
+export RUN_TIMEOUT_SEC=600
+export QUEUED_TIMEOUT_SEC=180
 ```
 
 ## Single run
@@ -39,17 +38,41 @@ Run ID format:
 
 `exp1-<UTC timestamp>-<workload>-N<N>-A<agents>-R<rep>`
 
-## Matrix run
+## Final matrix run (Section 4.1 / 4.2)
 
 ```bash
 ./matrix_runner.sh
 ```
 
-This executes:
+Default profile is `MATRIX_PROFILE=final105`, which executes:
 
-- `N in {50,100,200,500}`
-- `workload in {cpu,io}`
-- `repetitions = 5`
+- Baseline:
+  - `A in {10,25,50}`
+  - `workload in {cpu,io}`
+  - `N=A` (balanced), `N=5A` (overload)
+  - `REP=5`
+- Crash:
+  - `A in {10,25,50}`
+  - `failure_rate in {10,20,40}`
+  - `workload=cpu`
+  - `N=5A`
+  - `REP=5`
+
+Total runs: `105`.
+
+Optional:
+
+```bash
+CRASH_INCLUDE_IO=1 ./matrix_runner.sh
+```
+
+This adds IO crash matrix and total becomes `150`.
+
+Legacy matrix can still be executed with:
+
+```bash
+MATRIX_PROFILE=legacy ./matrix_runner.sh
+```
 
 ## Metrics
 
@@ -66,7 +89,7 @@ Per run, the harness computes and stores:
 ## Failure injection model
 
 - `FAILURE_RATE` is applied as process-crash injection (agent kill), not synthetic task failure.
-- For `FAILURE_RATE>0`, `run_matrix.sh` requires `AGENT_PIDS_FILE` containing one agent PID per line.
+- For `FAILURE_RATE>0`, `run_agents.sh` writes and `run_matrix.sh` reads `AGENT_PIDS_FILE`.
 - Kill count is `ceil(live_agents * FAILURE_RATE / 100)`.
 - Injection artifacts are saved per run:
   - `runs/<run_id>/failure_injection.log`
@@ -78,3 +101,29 @@ Per run, the harness computes and stores:
 - Uses `psql -v ON_ERROR_STOP=1`
 - Does not require `jq`
 - Does not modify app code or DB schema
+
+## Common failure causes (observed)
+
+- `401 unauthorized` on submission:
+  - `CONTROL_TOKEN` in harness and control process do not match.
+- Agents start but do not process jobs:
+  - stale/invalid `BOOTSTRAP` value, resulting in DHT bootstrap failure (`no peers in routing table`).
+- DB query errors during run:
+  - `MC_DB_DSN` not exported in current shell, causing local socket fallback or auth mismatch.
+- Baseline success-rate unexpectedly drops:
+  - `QUEUED_TIMEOUT_SEC` too low for heavy overload cells (jobs may fail by timeout before execution).
+- Run contamination:
+  - previous unfinished jobs (`queued/assigned/running`) or mixed old artifacts in `runs/`.
+
+## Pre-run sanity checklist
+
+- Control is running with matching env:
+  - `CONTROL_TOKEN`, `RUN_TIMEOUT_SEC`, `QUEUED_TIMEOUT_SEC`.
+- Harness shell exports:
+  - `CONTROL_URL`, `MC_DB_DSN`, `CONTROL_TOKEN`, `TTL_SEC`, `HEARTBEAT_SEC`.
+- Bootstrap is current for this control/seeder session:
+  - `export BOOTSTRAP='...'`.
+- DB backlog is empty before each run:
+  - `queued/assigned/running = 0`.
+- Final matrix lock is respected:
+  - `MATRIX_PROFILE=final105`, `CRASH_INCLUDE_IO=0`, `REPETITIONS=5`.

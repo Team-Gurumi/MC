@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
+	"strconv"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -14,11 +16,40 @@ type PGStore struct {
 	db *sql.DB
 }
 
+func envInt(name string, def int) int {
+	v := os.Getenv(name)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
+}
+
+func envDurationSec(name string, def int) time.Duration {
+	v := os.Getenv(name)
+	if v == "" {
+		return time.Duration(def) * time.Second
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return time.Duration(def) * time.Second
+	}
+	return time.Duration(n) * time.Second
+}
+
 func NewPGStore(dsn string) (*PGStore, error) {
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, err
 	}
+	// Connection-pool guard to prevent local address/client exhaustion under heavy runs.
+	db.SetMaxOpenConns(envInt("MC_DB_MAX_OPEN_CONNS", 40))
+	db.SetMaxIdleConns(envInt("MC_DB_MAX_IDLE_CONNS", 20))
+	db.SetConnMaxLifetime(envDurationSec("MC_DB_CONN_MAX_LIFETIME_SEC", 300))
+	db.SetConnMaxIdleTime(envDurationSec("MC_DB_CONN_MAX_IDLE_TIME_SEC", 120))
 	if err := db.Ping(); err != nil {
 		return nil, err
 	}
@@ -511,7 +542,7 @@ func (s *PGStore) FailActiveByRunID(ctx context.Context, runID string, reason st
 		       lease_expires_at = NULL,
 		       metrics          = COALESCE(metrics, '{}'::jsonb) ||
 		                          jsonb_build_object(
-		                            'reason', $2,
+		                            'reason', $2::text,
 		                            'timeout_ts', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
 		                          )
 		 WHERE status IN ('queued', 'assigned', 'running')

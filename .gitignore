@@ -1,3 +1,22 @@
 .pids/
 .logs/
 .github/
+.gocache/
+
+# exp1 success-rate artifacts
+exp1_success-rate/runs/
+exp1_success-rate/*.log
+exp1_success-rate/*.pids
+exp1_success-rate/results.csv
+exp1_success-rate/summary.csv
+exp1_success-rate/summary_aggregated.csv
+exp1_success-rate/filtered_results.csv
+exp1_success-rate/anomaly_runs.csv
+exp1_success-rate/anomaly_diagnosis.csv
+exp1_success-rate/run_prefix_first_job_time.csv
+exp1_success-rate/pilot_excluded_prefixes.txt
+exp1_success-rate/summary_dedup_latest.csv
+exp1_success-rate/summary_dedup_passonly.csv
+exp1_success-rate/pending_final105.csv
+exp1_success-rate/backups/
+work/

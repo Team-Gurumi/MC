@@ -20,6 +20,10 @@ fi
 
 WORKLOAD_TYPE="${WORKLOAD_TYPE:-cpu}"
 JOB_PREFIX="${JOB_PREFIX:-exp1-$(date -u +%Y%m%dT%H%M%SZ)}"
+WORKLOAD_SEED="${WORKLOAD_SEED:-}"
+if [[ -z "$WORKLOAD_SEED" ]]; then
+  WORKLOAD_SEED="$(printf '%s' "$JOB_PREFIX" | cksum | awk '{print $1}')"
+fi
 
 CONTROL_URL="${CONTROL_URL%/}"
 SUBMIT_URL="${CONTROL_URL}/api/tasks"
@@ -41,10 +45,10 @@ log_failure() {
 build_command_json() {
   case "$WORKLOAD_TYPE" in
     cpu)
-      printf '["sh","-lc","i=0; while [ $i -lt 3000000 ]; do i=$((i+1)); done; echo cpu_done"]'
+      printf '["sh","-lc","WORKLOAD_SEED=%s; i=0; while [ $i -lt 3000000 ]; do i=$((i+1)); done; echo cpu_done"]' "$WORKLOAD_SEED"
       ;;
     io)
-      printf '["sh","-lc","dd if=/dev/zero of=/tmp/blob bs=1M count=16 >/dev/null 2>&1; sync; wc -c /tmp/blob >/dev/null; echo io_done"]'
+      printf '["sh","-lc","WORKLOAD_SEED=%s; dd if=/dev/zero of=/tmp/blob bs=1M count=16 >/dev/null 2>&1; sync; wc -c /tmp/blob >/dev/null; echo io_done"]' "$WORKLOAD_SEED"
       ;;
     *)
       echo "unsupported workload_type: $WORKLOAD_TYPE (use cpu|io)" >&2
@@ -66,11 +70,18 @@ submit_one_job() {
     local resp_file http_code body_oneline echoed_id
     resp_file="$(mktemp)"
 
-    http_code="$(curl -sS -o "$resp_file" -w '%{http_code}' \
-      -X POST "$SUBMIT_URL" \
-      -H 'Content-Type: application/json' \
-      "${AUTH_ARGS[@]}" \
-      -d "$payload" || true)"
+    if [[ -n "${CONTROL_TOKEN:-}" ]]; then
+      http_code="$(curl -sS -o "$resp_file" -w '%{http_code}' \
+        -X POST "$SUBMIT_URL" \
+        -H 'Content-Type: application/json' \
+        -H "Authorization: Bearer ${CONTROL_TOKEN}" \
+        -d "$payload" || true)"
+    else
+      http_code="$(curl -sS -o "$resp_file" -w '%{http_code}' \
+        -X POST "$SUBMIT_URL" \
+        -H 'Content-Type: application/json' \
+        -d "$payload" || true)"
+    fi
 
     if [[ "$http_code" == "200" || "$http_code" == "201" ]]; then
       echoed_id=$(grep -Eo '"(job_id|id)"[[:space:]]*:[[:space:]]*"[^"]+"' "$resp_file" | head -n1 | sed -E 's/.*"([^"]+)"$/\1/')
@@ -103,6 +114,8 @@ for ((i=1; i<=N; i++)); do
     printf '%s\n' "$out_id"
     submitted=$((submitted + 1))
   fi
+  # harness stability patch: tiny throttle to reduce HTTP burst churn.
+  sleep 0.02
 done
 
 echo "submitted_count=${submitted}" >&2

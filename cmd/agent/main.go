@@ -94,7 +94,9 @@ func main() {
 
 			return
 		}
+		var manifestHint *task.Manifest
 		if manWait, err := agent.WaitForManifest(context.Background(), *controlURL, token, jobID, 15*time.Second); err == nil {
+			manifestHint = manWait
 			log.Printf("[agent] manifest ready for job=%s (root_cid=%s)", jobID, manWait.RootCID)
 		} else {
 			log.Printf("[agent] manifest wait timeout for job=%s: %v", jobID, err)
@@ -141,22 +143,27 @@ func main() {
 		// 3) manifest 확인
 		var man task.Manifest
 		if err := d.GetJSON(task.KeyManifest(jobID), &man, 3*time.Second); err != nil || man.RootCID == "" {
-			_ = finish.Report(
-				context.Background(),
-				jobID,
-				"failed",
-				map[string]any{
-					"error_stage": "manifest_check",
-					"reason":      "manifest_not_found",
-				},
-				"",
-				nil,
-				"manifest not found on DHT",
-				agentID,
-				leaseToken,
-			)
-			cancelJob()
-			return
+			// wait_manifest에서 noop/empty를 허용한 경우 DHT strict check를 건너뛴다.
+			if manifestHint != nil && (strings.EqualFold(manifestHint.RootCID, "noop") || manifestHint.RootCID == "") {
+				man = *manifestHint
+			} else {
+				_ = finish.Report(
+					context.Background(),
+					jobID,
+					"failed",
+					map[string]any{
+						"error_stage": "manifest_check",
+						"reason":      "manifest_not_found",
+					},
+					"",
+					nil,
+					"manifest not found on DHT",
+					agentID,
+					leaseToken,
+				)
+				cancelJob()
+				return
+			}
 		}
 
 		// 3.5) meta도 읽어와야 run 가능

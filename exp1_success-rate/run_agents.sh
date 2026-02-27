@@ -12,6 +12,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 NS="${NS:-mc}"
 BOOTSTRAP="${BOOTSTRAP:-}"
 AGENT_FLAGS="${AGENT_FLAGS:-}"
+AGENT_STABILIZE_SEC="${AGENT_STABILIZE_SEC:-6}"
+AUTO_BOOTSTRAP_FROM_CONTROL="${AUTO_BOOTSTRAP_FROM_CONTROL:-1}"
 
 if [[ -z "${AGENT_PIDS_FILE:-}" ]]; then
   AGENT_PIDS_FILE="${RUNS_ROOT}/agents.pids"
@@ -70,6 +72,23 @@ ensure_agent_binary() {
   )
 }
 
+maybe_auto_bootstrap() {
+  if [[ "$AUTO_BOOTSTRAP_FROM_CONTROL" != "1" ]]; then
+    return 0
+  fi
+  local url resp selected
+  url="${CONTROL_URL%/}/debug/bootstrap"
+  if [[ -n "${CONTROL_TOKEN:-}" ]]; then
+    resp="$(curl -sS -H "Authorization: Bearer ${CONTROL_TOKEN}" "$url" || true)"
+  else
+    resp="$(curl -sS "$url" || true)"
+  fi
+  selected="$(printf '%s' "$resp" | sed -nE 's/.*"bootstrap_selected"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -n1)"
+  if [[ -n "$selected" ]]; then
+    BOOTSTRAP="$selected"
+  fi
+}
+
 start_agents() {
   if [[ -n "${CONFIG_JSON_PATH}" ]]; then
     load_ttl_hb_from_json "$CONFIG_JSON_PATH"
@@ -87,7 +106,12 @@ start_agents() {
     echo "HEARTBEAT_SEC must be a positive integer" >&2
     exit 1
   fi
+  if ! [[ "$AGENT_STABILIZE_SEC" =~ ^[0-9]+$ ]] || (( AGENT_STABILIZE_SEC < 0 )); then
+    echo "AGENT_STABILIZE_SEC must be a non-negative integer" >&2
+    exit 1
+  fi
   ensure_agent_binary
+  maybe_auto_bootstrap
 
   mkdir -p "$(dirname "$AGENT_PIDS_FILE")" "$LOG_DIR"
   : > "$AGENT_PIDS_FILE"
@@ -101,6 +125,8 @@ start_agents() {
         -ttl-sec "$TTL_SEC" -heartbeat-sec "$HEARTBEAT_SEC" ${AGENT_FLAGS} \
         >> "${LOG_DIR}/agent_${i}.log" 2>&1
     ) &
+    # harness stability patch: guard against transient parent-dir disappearance between retries.
+    mkdir -p "$(dirname "$AGENT_PIDS_FILE")" "$LOG_DIR"
     echo "$!" >> "$AGENT_PIDS_FILE"
   done
 
@@ -115,6 +141,28 @@ start_agents() {
     echo "failed to launch all agents: expected=${AGENTS} live=${live_count}" >&2
     cleanup_on_exit
     exit 1
+  fi
+
+  # Re-check after a short stabilization window to catch immediate bootstrap/DHT exits.
+  if (( AGENT_STABILIZE_SEC > 0 )); then
+    # harness stability patch: guarantee at least 2s settle time before submissions begin.
+    local stabilize_sec="$AGENT_STABILIZE_SEC"
+    if (( stabilize_sec < 2 )); then
+      stabilize_sec=2
+    fi
+    sleep "$stabilize_sec"
+    live_count=0
+    while IFS= read -r pid; do
+      [[ -z "$pid" ]] && continue
+      if kill -0 "$pid" 2>/dev/null; then
+        live_count=$((live_count + 1))
+      fi
+    done < "$AGENT_PIDS_FILE"
+    if (( live_count != AGENTS )); then
+      echo "agents not stable after ${stabilize_sec}s: expected=${AGENTS} live=${live_count}" >&2
+      cleanup_on_exit
+      exit 1
+    fi
   fi
 
   local git_hash="unknown"

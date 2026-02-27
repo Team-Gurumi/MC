@@ -814,6 +814,8 @@ func mountHTTP(d *dhtnode.Node, store demand.Store, ns string, enqueue func(stri
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/api/health", healthHandler)
+	mux.Handle("/debug/config", debugConfigHandler())
+	mux.Handle("/debug/bootstrap", debugBootstrapHandler(d))
 
 	mux.HandleFunc("/api/tasks", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
@@ -876,6 +878,44 @@ func mountHTTP(d *dhtnode.Node, store demand.Store, ns string, enqueue func(stri
 	mux.Handle("/internal/tasks/", debugLeaseHandler(d, ns))
 	mux.Handle("/internal/requeue/", forceRequeueHandler(d, ns, enqueue))
 	return mux
+}
+
+func debugConfigHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireAuth(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"run_timeout_sec":    envInt("RUN_TIMEOUT_SEC", 600),
+			"queued_timeout_sec": envInt("QUEUED_TIMEOUT_SEC", 180),
+		})
+	}
+}
+
+func debugBootstrapHandler(d *dhtnode.Node) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireAuth(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		addrs := d.Multiaddrs()
+		selected := ""
+		for _, a := range addrs {
+			if strings.Contains(a, "/ip4/127.0.0.1/") {
+				selected = a
+				break
+			}
+		}
+		if selected == "" && len(addrs) > 0 {
+			selected = addrs[0]
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"peer_id":            d.Host.ID().String(),
+			"bootstrap_selected": selected,
+			"bootstrap_addrs":    addrs,
+		})
+	}
 }
 
 func statsHandler(store demand.Store) http.HandlerFunc {
