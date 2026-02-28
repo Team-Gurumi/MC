@@ -204,6 +204,13 @@ func main() {
 		}
 
 		// 5) 실행
+		// Duplicate Execution Rate 실험용 로그: 실행 시작 시점 기록
+		// lease_acquired_ts는 대략 (Expires - TTL)로 역산 가능하지만, 정확성을 위해 여기서 계산
+		acquiredTS := lease.Expires.Add(-leaseTTL)
+		log.Printf(`{"event":"execution_started","timestamp":"%s","job_id":"%s","agent_id":"%s","lease_acquired_ts":"%s","lease_expire_ts":"%s"}`,
+			time.Now().UTC().Format(time.RFC3339Nano), jobID, agentID,
+			acquiredTS.Format(time.RFC3339Nano), lease.Expires.Format(time.RFC3339Nano))
+
 		res, runErr := agent.RunInContainer(jobCtx, workDir, meta.Image, meta.Command)
 
 		// 하트비트 종료

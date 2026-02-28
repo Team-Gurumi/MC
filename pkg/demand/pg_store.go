@@ -95,16 +95,23 @@ func (s *PGStore) AttachManifest(ctx context.Context, id string, m Manifest) err
 	return nil
 }
 
-// 4) try-claim
+// 4) try-claim — single atomic conditional UPDATE
+// Handles both fresh claims (status=queued) and re-claims of expired leases
+// (status=assigned/running with lease_expires_at < now()).
+// This eliminates the race window between ListExpiredLeases → SetStatusQueued → TryClaim.
 func (s *PGStore) TryClaim(ctx context.Context, id string, agentID string, ttl time.Duration) (*Lease, error) {
 	row := s.db.QueryRowContext(ctx, `
 		UPDATE demand_jobs
 		   SET lease_agent      = $2,
 		       lease_expires_at = now() + ($3 || ' seconds')::interval,
 		       lease_token      = COALESCE(lease_token, 0) + 1,
-		       status           = 'assigned'
+		       status           = 'assigned',
+		       retry_count      = CASE
+		                            WHEN status IN ('assigned','running') THEN retry_count + 1
+		                            ELSE retry_count
+		                          END
 		 WHERE id = $1
-		   AND status = 'queued'  -- 이미 끝난 잡(succeeded)은 다시 못 잡게
+		   AND status NOT IN ('succeeded','failed')
 		   AND (lease_expires_at IS NULL OR lease_expires_at < now())
 		RETURNING lease_token, lease_expires_at
 	`, id, agentID, int(ttl.Seconds()))
@@ -237,7 +244,7 @@ func (s *PGStore) ListExpiredLeases(ctx context.Context, now time.Time) ([]strin
 }
 
 func (s *PGStore) SetStatusQueued(ctx context.Context, id string) error {
-    res, err := s.db.ExecContext(ctx, `
+	res, err := s.db.ExecContext(ctx, `
         UPDATE demand_jobs
            SET status = 'queued',
                lease_agent = NULL,
@@ -248,15 +255,14 @@ func (s *PGStore) SetStatusQueued(ctx context.Context, id string) error {
            AND lease_expires_at IS NOT NULL
            AND lease_expires_at < now()
     `, id)
-    if err != nil {
-        return err
-    }
-    if n, _ := res.RowsAffected(); n == 0 {
-        return ErrJobNotFound
-    }
-    return nil
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrJobNotFound
+	}
+	return nil
 }
-
 
 func (s *PGStore) ListQueued(ctx context.Context) ([]DBJob, error) {
 	rows, err := s.db.QueryContext(ctx, `
@@ -408,4 +414,3 @@ func (s *PGStore) CountByStatus(ctx context.Context) (map[JobStatus]int64, error
 	}
 	return out, nil
 }
-

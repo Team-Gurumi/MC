@@ -1,0 +1,290 @@
+{
+  "variant": "post-patch (atomic TryClaim)",
+  "config": {
+    "agents": 100,
+    "tasks": 200,
+    "ttl_sec": 10,
+    "kill_percent": 10,
+    "repeats": 5,
+    "p_race_new": 0.04,
+    "p_race_reassign": 0.12,
+    "seed_base": 1000
+  },
+  "results": {
+    "10": {
+      "race_window_ms": 10,
+      "mean_rate_pct": 0.0,
+      "std_rate_pct": 0.0,
+      "min_rate_pct": 0.0,
+      "max_rate_pct": 0.0,
+      "mean_duplicate_jobs": 0,
+      "per_run": [
+        {
+          "rep": 1,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 223,
+          "race_attempts": 6,
+          "race_blocked": 6,
+          "sequential_reassignments": 23
+        },
+        {
+          "rep": 2,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 229,
+          "race_attempts": 13,
+          "race_blocked": 13,
+          "sequential_reassignments": 29
+        },
+        {
+          "rep": 3,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 217,
+          "race_attempts": 12,
+          "race_blocked": 12,
+          "sequential_reassignments": 17
+        },
+        {
+          "rep": 4,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 225,
+          "race_attempts": 9,
+          "race_blocked": 9,
+          "sequential_reassignments": 25
+        },
+        {
+          "rep": 5,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 217,
+          "race_attempts": 4,
+          "race_blocked": 4,
+          "sequential_reassignments": 17
+        }
+      ]
+    },
+    "50": {
+      "race_window_ms": 50,
+      "mean_rate_pct": 0.0,
+      "std_rate_pct": 0.0,
+      "min_rate_pct": 0.0,
+      "max_rate_pct": 0.0,
+      "mean_duplicate_jobs": 0,
+      "per_run": [
+        {
+          "rep": 1,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 226,
+          "race_attempts": 11,
+          "race_blocked": 11,
+          "sequential_reassignments": 26
+        },
+        {
+          "rep": 2,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 215,
+          "race_attempts": 10,
+          "race_blocked": 10,
+          "sequential_reassignments": 15
+        },
+        {
+          "rep": 3,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 223,
+          "race_attempts": 7,
+          "race_blocked": 7,
+          "sequential_reassignments": 23
+        },
+        {
+          "rep": 4,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 216,
+          "race_attempts": 8,
+          "race_blocked": 8,
+          "sequential_reassignments": 16
+        },
+        {
+          "rep": 5,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 210,
+          "race_attempts": 13,
+          "race_blocked": 13,
+          "sequential_reassignments": 10
+        }
+      ]
+    },
+    "100": {
+      "race_window_ms": 100,
+      "mean_rate_pct": 0.0,
+      "std_rate_pct": 0.0,
+      "min_rate_pct": 0.0,
+      "max_rate_pct": 0.0,
+      "mean_duplicate_jobs": 0,
+      "per_run": [
+        {
+          "rep": 1,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 212,
+          "race_attempts": 12,
+          "race_blocked": 12,
+          "sequential_reassignments": 12
+        },
+        {
+          "rep": 2,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 218,
+          "race_attempts": 8,
+          "race_blocked": 8,
+          "sequential_reassignments": 18
+        },
+        {
+          "rep": 3,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 218,
+          "race_attempts": 9,
+          "race_blocked": 9,
+          "sequential_reassignments": 18
+        },
+        {
+          "rep": 4,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 217,
+          "race_attempts": 13,
+          "race_blocked": 13,
+          "sequential_reassignments": 17
+        },
+        {
+          "rep": 5,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 221,
+          "race_attempts": 11,
+          "race_blocked": 11,
+          "sequential_reassignments": 21
+        }
+      ]
+    },
+    "200": {
+      "race_window_ms": 200,
+      "mean_rate_pct": 0.0,
+      "std_rate_pct": 0.0,
+      "min_rate_pct": 0.0,
+      "max_rate_pct": 0.0,
+      "mean_duplicate_jobs": 0,
+      "per_run": [
+        {
+          "rep": 1,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 222,
+          "race_attempts": 9,
+          "race_blocked": 9,
+          "sequential_reassignments": 22
+        },
+        {
+          "rep": 2,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 218,
+          "race_attempts": 9,
+          "race_blocked": 9,
+          "sequential_reassignments": 18
+        },
+        {
+          "rep": 3,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 226,
+          "race_attempts": 10,
+          "race_blocked": 10,
+          "sequential_reassignments": 26
+        },
+        {
+          "rep": 4,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 226,
+          "race_attempts": 15,
+          "race_blocked": 15,
+          "sequential_reassignments": 26
+        },
+        {
+          "rep": 5,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 224,
+          "race_attempts": 9,
+          "race_blocked": 9,
+          "sequential_reassignments": 24
+        }
+      ]
+    },
+    "500": {
+      "race_window_ms": 500,
+      "mean_rate_pct": 0.0,
+      "std_rate_pct": 0.0,
+      "min_rate_pct": 0.0,
+      "max_rate_pct": 0.0,
+      "mean_duplicate_jobs": 0,
+      "per_run": [
+        {
+          "rep": 1,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 228,
+          "race_attempts": 7,
+          "race_blocked": 7,
+          "sequential_reassignments": 28
+        },
+        {
+          "rep": 2,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 221,
+          "race_attempts": 9,
+          "race_blocked": 9,
+          "sequential_reassignments": 21
+        },
+        {
+          "rep": 3,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 224,
+          "race_attempts": 13,
+          "race_blocked": 13,
+          "sequential_reassignments": 24
+        },
+        {
+          "rep": 4,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 217,
+          "race_attempts": 7,
+          "race_blocked": 7,
+          "sequential_reassignments": 17
+        },
+        {
+          "rep": 5,
+          "duplicate_jobs": 0,
+          "rate_pct": 0.0,
+          "total_attempts": 220,
+          "race_attempts": 11,
+          "race_blocked": 11,
+          "sequential_reassignments": 20
+        }
+      ]
+    }
+  }
+}

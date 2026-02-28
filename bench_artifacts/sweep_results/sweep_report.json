@@ -1,0 +1,213 @@
+{
+  "config": {
+    "agents": 100,
+    "tasks": 200,
+    "ttl_sec": 10,
+    "kill_percent": 10,
+    "repeats": 5,
+    "p_race_new": 0.04,
+    "p_race_reassign": 0.12
+  },
+  "results": {
+    "10": {
+      "race_window_ms": 10,
+      "mean_rate_pct": 4.4,
+      "std_rate_pct": 1.9170289512680814,
+      "min_rate_pct": 2.0,
+      "max_rate_pct": 6.5,
+      "mean_duplicate_jobs": 8.8,
+      "per_run": [
+        {
+          "rep": 1,
+          "duplicate_jobs": 6,
+          "rate_pct": 3.0,
+          "total_attempts": 229
+        },
+        {
+          "rep": 2,
+          "duplicate_jobs": 13,
+          "rate_pct": 6.5,
+          "total_attempts": 242
+        },
+        {
+          "rep": 3,
+          "duplicate_jobs": 12,
+          "rate_pct": 6.0,
+          "total_attempts": 229
+        },
+        {
+          "rep": 4,
+          "duplicate_jobs": 9,
+          "rate_pct": 4.5,
+          "total_attempts": 234
+        },
+        {
+          "rep": 5,
+          "duplicate_jobs": 4,
+          "rate_pct": 2.0,
+          "total_attempts": 221
+        }
+      ]
+    },
+    "50": {
+      "race_window_ms": 50,
+      "mean_rate_pct": 4.9,
+      "std_rate_pct": 1.193733638631332,
+      "min_rate_pct": 3.5000000000000004,
+      "max_rate_pct": 6.5,
+      "mean_duplicate_jobs": 9.8,
+      "per_run": [
+        {
+          "rep": 1,
+          "duplicate_jobs": 11,
+          "rate_pct": 5.5,
+          "total_attempts": 237
+        },
+        {
+          "rep": 2,
+          "duplicate_jobs": 10,
+          "rate_pct": 5.0,
+          "total_attempts": 225
+        },
+        {
+          "rep": 3,
+          "duplicate_jobs": 7,
+          "rate_pct": 3.5000000000000004,
+          "total_attempts": 230
+        },
+        {
+          "rep": 4,
+          "duplicate_jobs": 8,
+          "rate_pct": 4.0,
+          "total_attempts": 224
+        },
+        {
+          "rep": 5,
+          "duplicate_jobs": 13,
+          "rate_pct": 6.5,
+          "total_attempts": 223
+        }
+      ]
+    },
+    "100": {
+      "race_window_ms": 100,
+      "mean_rate_pct": 5.3,
+      "std_rate_pct": 1.036822067666386,
+      "min_rate_pct": 4.0,
+      "max_rate_pct": 6.5,
+      "mean_duplicate_jobs": 10.6,
+      "per_run": [
+        {
+          "rep": 1,
+          "duplicate_jobs": 12,
+          "rate_pct": 6.0,
+          "total_attempts": 224
+        },
+        {
+          "rep": 2,
+          "duplicate_jobs": 8,
+          "rate_pct": 4.0,
+          "total_attempts": 226
+        },
+        {
+          "rep": 3,
+          "duplicate_jobs": 9,
+          "rate_pct": 4.5,
+          "total_attempts": 227
+        },
+        {
+          "rep": 4,
+          "duplicate_jobs": 13,
+          "rate_pct": 6.5,
+          "total_attempts": 230
+        },
+        {
+          "rep": 5,
+          "duplicate_jobs": 11,
+          "rate_pct": 5.5,
+          "total_attempts": 232
+        }
+      ]
+    },
+    "200": {
+      "race_window_ms": 200,
+      "mean_rate_pct": 5.2,
+      "std_rate_pct": 1.3038404810405297,
+      "min_rate_pct": 4.5,
+      "max_rate_pct": 7.5,
+      "mean_duplicate_jobs": 10.4,
+      "per_run": [
+        {
+          "rep": 1,
+          "duplicate_jobs": 9,
+          "rate_pct": 4.5,
+          "total_attempts": 231
+        },
+        {
+          "rep": 2,
+          "duplicate_jobs": 9,
+          "rate_pct": 4.5,
+          "total_attempts": 227
+        },
+        {
+          "rep": 3,
+          "duplicate_jobs": 10,
+          "rate_pct": 5.0,
+          "total_attempts": 236
+        },
+        {
+          "rep": 4,
+          "duplicate_jobs": 15,
+          "rate_pct": 7.5,
+          "total_attempts": 241
+        },
+        {
+          "rep": 5,
+          "duplicate_jobs": 9,
+          "rate_pct": 4.5,
+          "total_attempts": 233
+        }
+      ]
+    },
+    "500": {
+      "race_window_ms": 500,
+      "mean_rate_pct": 4.6000000000000005,
+      "std_rate_pct": 1.244989959798873,
+      "min_rate_pct": 3.5000000000000004,
+      "max_rate_pct": 6.5,
+      "mean_duplicate_jobs": 9.2,
+      "per_run": [
+        {
+          "rep": 1,
+          "duplicate_jobs": 7,
+          "rate_pct": 3.5000000000000004,
+          "total_attempts": 235
+        },
+        {
+          "rep": 2,
+          "duplicate_jobs": 9,
+          "rate_pct": 4.5,
+          "total_attempts": 230
+        },
+        {
+          "rep": 3,
+          "duplicate_jobs": 13,
+          "rate_pct": 6.5,
+          "total_attempts": 237
+        },
+        {
+          "rep": 4,
+          "duplicate_jobs": 7,
+          "rate_pct": 3.5000000000000004,
+          "total_attempts": 224
+        },
+        {
+          "rep": 5,
+          "duplicate_jobs": 10,
+          "rate_pct": 5.0,
+          "total_attempts": 231
+        }
+      ]
+    }
+  }
+}

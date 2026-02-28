@@ -1,0 +1,2 @@
+{"event": "execution_started", "timestamp": "2026-02-19T05:00:06.315761+00:00", "job_id": "job-sim-0027", "agent_id": "12D3KooWAgent0032", "lease_acquired_ts": "2026-02-19T05:00:06.315761+00:00", "lease_expire_ts": "2026-02-19T05:00:16.315761+00:00"}
+{"event": "execution_started", "timestamp": "2026-02-19T05:00:03.706363+00:00", "job_id": "job-sim-0164", "agent_id": "12D3KooWAgent0032", "lease_acquired_ts": "2026-02-19T05:00:03.706363+00:00", "lease_expire_ts": "2026-02-19T05:00:13.706363+00:00"}
