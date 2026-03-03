@@ -4,18 +4,23 @@ External HTTP + SQL harness for Mutual Cloud success-rate experiments.
 
 ## Layout
 
-- `runs/<run_id>/config.json`
-- `runs/<run_id>/job_metrics.csv`
-- `runs/<run_id>/summary.json`
-- `runs/<run_id>/summary.csv`
-- `runs/<run_id>/submission_ids.txt`
-- `runs/<run_id>/submission.log`
-- `runs/<run_id>/control_snapshot.log`
-- `results.csv` (global append-only rows)
+- `raw/runs/<run_id>/...` raw per-run artifacts
+- `raw/summary.csv` raw cumulative summary rows
+- `raw/results.csv` raw append-only result rows
+- `curated/summary_dedup_latest.csv` latest deduplicated view
+- `curated/summary_dedup_passonly.csv` strict pass-only deduplicated view
+- `curated/summary_aggregated.csv` aggregated matrix view
+- `curated/pending_final105.csv` pending cells against final105
+- `analysis/` notebooks/scripts for one-off analysis
+- `figures/` generated plots/figures
+- `pipeline/` harness scripts/sql entrypoints
+
+Canonical path policy:
+- run and data artifacts are authoritative only under `raw/`, `curated/`, and `pipeline/` (no root-level compatibility aliases).
 
 ## Configuration
 
-All defaults are in `config.sh` and can be overridden by environment variables.
+All defaults are in `pipeline/config.sh` and can be overridden by environment variables.
 
 ```bash
 export CONTROL_URL="http://127.0.0.1:8080"
@@ -31,7 +36,7 @@ export QUEUED_TIMEOUT_SEC=180
 ## Single run
 
 ```bash
-./run_matrix.sh 100 cpu
+./pipeline/run_matrix.sh 100 cpu
 ```
 
 Run ID format:
@@ -41,7 +46,7 @@ Run ID format:
 ## Final matrix run (Section 4.1 / 4.2)
 
 ```bash
-./matrix_runner.sh
+./pipeline/matrix_runner.sh
 ```
 
 Default profile is `MATRIX_PROFILE=final105`, which executes:
@@ -63,7 +68,7 @@ Total runs: `105`.
 Optional:
 
 ```bash
-CRASH_INCLUDE_IO=1 ./matrix_runner.sh
+CRASH_INCLUDE_IO=1 ./pipeline/matrix_runner.sh
 ```
 
 This adds IO crash matrix and total becomes `150`.
@@ -71,7 +76,7 @@ This adds IO crash matrix and total becomes `150`.
 Legacy matrix can still be executed with:
 
 ```bash
-MATRIX_PROFILE=legacy ./matrix_runner.sh
+MATRIX_PROFILE=legacy ./pipeline/matrix_runner.sh
 ```
 
 ## Metrics
@@ -89,11 +94,11 @@ Per run, the harness computes and stores:
 ## Failure injection model
 
 - `FAILURE_RATE` is applied as process-crash injection (agent kill), not synthetic task failure.
-- For `FAILURE_RATE>0`, `run_agents.sh` writes and `run_matrix.sh` reads `AGENT_PIDS_FILE`.
+- For `FAILURE_RATE>0`, `pipeline/run_agents.sh` writes and `pipeline/run_matrix.sh` reads `AGENT_PIDS_FILE`.
 - Kill count is `ceil(live_agents * FAILURE_RATE / 100)`.
 - Injection artifacts are saved per run:
-  - `runs/<run_id>/failure_injection.log`
-  - `runs/<run_id>/killed_agents.txt`
+  - `raw/runs/<run_id>/failure_injection.log`
+  - `raw/runs/<run_id>/killed_agents.txt`
 
 ## Reproducibility notes
 
@@ -113,7 +118,7 @@ Per run, the harness computes and stores:
 - Baseline success-rate unexpectedly drops:
   - `QUEUED_TIMEOUT_SEC` too low for heavy overload cells (jobs may fail by timeout before execution).
 - Run contamination:
-  - previous unfinished jobs (`queued/assigned/running`) or mixed old artifacts in `runs/`.
+  - previous unfinished jobs (`queued/assigned/running`) or mixed old artifacts in `raw/runs/`.
 
 ## Pre-run sanity checklist
 

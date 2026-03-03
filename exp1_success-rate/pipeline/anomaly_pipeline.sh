@@ -5,12 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./config.sh
 . "${SCRIPT_DIR}/config.sh"
 
-SUMMARY_CSV="${SUMMARY_CSV:-${SCRIPT_DIR}/summary.csv}"
-SUMMARY_AGG_CSV="${SUMMARY_AGG_CSV:-${SCRIPT_DIR}/summary_aggregated.csv}"
-RESULTS_CSV="${RESULTS_CSV:-${SCRIPT_DIR}/results.csv}"
-FILTERED_RESULTS_CSV="${SCRIPT_DIR}/filtered_results.csv"
-ANOMALY_CSV="${SCRIPT_DIR}/anomaly_runs.csv"
-DIAG_CSV="${SCRIPT_DIR}/anomaly_diagnosis.csv"
+SUMMARY_CSV="${SUMMARY_CSV:-${EXP1_ROOT}/raw/summary.csv}"
+SUMMARY_AGG_CSV="${SUMMARY_AGG_CSV:-${EXP1_ROOT}/curated/summary_aggregated.csv}"
+RESULTS_CSV="${RESULTS_CSV:-${EXP1_ROOT}/raw/results.csv}"
+FILTERED_RESULTS_CSV="${EXP1_ROOT}/curated/filtered_results.csv"
+ANOMALY_CSV="${EXP1_ROOT}/curated/anomaly_runs.csv"
+DIAG_CSV="${EXP1_ROOT}/curated/anomaly_diagnosis.csv"
 
 if [[ ! -f "$SUMMARY_CSV" ]]; then
   echo "missing summary file: $SUMMARY_CSV" >&2

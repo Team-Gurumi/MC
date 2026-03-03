@@ -6,9 +6,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/config.sh"
 
 SUMMARY_IN="${SUMMARY_CSV}"
-DEDUP_OUT="${SCRIPT_DIR}/summary_dedup_latest.csv"
-PASS_OUT="${SCRIPT_DIR}/summary_dedup_passonly.csv"
-PENDING_OUT="${SCRIPT_DIR}/pending_final105.csv"
+DEDUP_OUT="${EXP1_ROOT}/curated/summary_dedup_latest.csv"
+PASS_OUT="${EXP1_ROOT}/curated/summary_dedup_passonly.csv"
+PENDING_OUT="${EXP1_ROOT}/curated/pending_final105.csv"
 
 if [[ ! -f "$SUMMARY_IN" ]]; then
   echo "missing summary file: $SUMMARY_IN" >&2

@@ -5,6 +5,7 @@
 
 # exp1 success-rate artifacts
 exp1_success-rate/runs/
+exp1_success-rate/runs
 exp1_success-rate/*.log
 exp1_success-rate/*.pids
 exp1_success-rate/results.csv
@@ -19,4 +20,11 @@ exp1_success-rate/summary_dedup_latest.csv
 exp1_success-rate/summary_dedup_passonly.csv
 exp1_success-rate/pending_final105.csv
 exp1_success-rate/backups/
+exp1_success-rate/raw/
+exp1_success-rate/curated/
+exp1_success-rate/figures/
+exp1_success-rate/analysis/__pycache__/
+exp1_success-rate/analysis/recovery_*.csv
+.venv_figs/
+.mplconfig/
 work/

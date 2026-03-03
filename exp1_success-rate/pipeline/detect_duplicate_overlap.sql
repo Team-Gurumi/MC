@@ -1,6 +1,6 @@
 -- Detect duplicate execution by lease interval overlap using metrics JSONB only.
 -- Usage:
---   psql "$MC_DB_DSN" -v ON_ERROR_STOP=1 -v job_prefix='exp1-20260220T051628Z-cpu-N500-A10-R1' -f exp1_success-rate/detect_duplicate_overlap.sql
+--   psql "$MC_DB_DSN" -v ON_ERROR_STOP=1 -v job_prefix='exp1-20260220T051628Z-cpu-N500-A10-R1' -f exp1_success-rate/pipeline/detect_duplicate_overlap.sql
 
 WITH params AS (
   SELECT :'job_prefix'::text AS job_prefix

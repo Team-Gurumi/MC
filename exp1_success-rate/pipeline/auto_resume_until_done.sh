@@ -17,7 +17,7 @@ cd "${SCRIPT_DIR}/.."
 
 for ((cycle=1; cycle<=MAX_CYCLES; cycle++)); do
   echo "[auto-resume] cycle=${cycle}/${MAX_CYCLES}"
-  out="$(bash exp1_success-rate/reconcile_results.sh)"
+  out="$(bash "${SCRIPT_DIR}/reconcile_results.sh")"
   echo "$out" | tail -n 4
   pending="$(echo "$out" | sed -nE 's/.*pending_runs=([0-9]+).*/\1/p' | tail -n1)"
   pending="${pending:-0}"
@@ -26,10 +26,10 @@ for ((cycle=1; cycle<=MAX_CYCLES; cycle++)); do
     exit 0
   fi
 
-  bash exp1_success-rate/resume_remaining.sh || true
+  bash "${SCRIPT_DIR}/resume_remaining.sh" || true
 
-  if [[ -f exp1_success-rate/runs/matrix_runner.pid ]]; then
-    pid="$(cat exp1_success-rate/runs/matrix_runner.pid 2>/dev/null || true)"
+  if [[ -f exp1_success-rate/raw/runs/matrix_runner.pid ]]; then
+    pid="$(cat exp1_success-rate/raw/runs/matrix_runner.pid 2>/dev/null || true)"
     if [[ -n "$pid" ]]; then
       while kill -0 "$pid" 2>/dev/null; do
         sleep 10
@@ -41,7 +41,7 @@ for ((cycle=1; cycle<=MAX_CYCLES; cycle++)); do
   fi
 
   echo "[auto-resume] runner exited; checking pending again"
-  tail -n 20 exp1_success-rate/runs/failure_analysis.log 2>/dev/null || true
+  tail -n 20 exp1_success-rate/raw/runs/failure_analysis.log 2>/dev/null || true
   sleep "$SLEEP_BETWEEN_CYCLES_SEC"
 done
 
